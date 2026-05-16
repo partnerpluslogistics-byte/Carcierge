@@ -27,7 +27,7 @@ const COUNTRIES = [
   "India", "Pakistan", "Philippines", "Other",
 ];
 
-type PaymentMethod = "whish" | "omt" | "payment_link" | "bank_transfer";
+type PaymentMethod = "whish" | "omt" | "ziina" | "payment_link" | "bank_transfer";
 
 interface InsuranceEntry {
   policyNumber: string;
@@ -416,6 +416,7 @@ export default function VehicleRegistrationModal({
                 {([
                   { value: "whish" as PaymentMethod, label: "Whish Money", flag: "🇱🇧", note: "Lebanon" },
                   { value: "omt" as PaymentMethod, label: "OMT", flag: "🇱🇧", note: "Lebanon" },
+                  { value: "ziina" as PaymentMethod, label: "Ziina", flag: "🇱🇧", note: "Lebanon" },
                   { value: "payment_link" as PaymentMethod, label: "Payment Link", flag: "🌍", note: "All countries" },
                 ]).map((m) => (
                   <button
@@ -456,6 +457,17 @@ export default function VehicleRegistrationModal({
                   <span className="text-muted-foreground">OMT Beneficiary</span><span className="font-medium">Carcierge SAL</span>
                   <span className="text-muted-foreground">OMT Code</span><span className="font-mono font-medium">CAR-{createdVehicleId}</span>
                   <span className="text-muted-foreground">Amount</span><span className="font-medium text-green-600">$50.00 USD</span>
+                </div>
+              </div>
+            )}
+            {paymentMethod === "ziina" && (
+              <div className="rounded-lg border p-4 space-y-2 text-sm">
+                <p className="font-semibold flex items-center gap-2"><Building2 className="h-4 w-4" /> Ziina Payment</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  <span className="text-muted-foreground">Send payment to Ziina number</span><span className="font-mono font-medium">+961 70 000 000</span>
+                  <span className="text-muted-foreground">Account Name</span><span className="font-medium">Carcierge SAL</span>
+                  <span className="text-muted-foreground">Amount</span><span className="font-medium text-green-600">$50.00 USD</span>
+                  <span className="text-muted-foreground">Reference</span><span className="font-mono font-medium">CAR-{createdVehicleId}</span>
                 </div>
               </div>
             )}
