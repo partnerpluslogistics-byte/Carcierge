@@ -37,6 +37,14 @@ const PAYMENT_METHODS = [
     instructions: "Visit any OMT branch or agent → Transfer to account: XXXXXXXX → Mention the payment reference to the agent.",
   },
   {
+    id: "ziina",
+    label: "Ziina",
+    description: "Lebanon mobile payment",
+    icon: Smartphone,
+    region: "🇱🇧 Lebanon",
+    instructions: "Open the Ziina app → Send payment to the registered Ziina number → Enter the exact amount → Add the payment reference in the note field.",
+  },
+  {
     id: "payment_link",
     label: "Payment Link",
     description: "All countries — Pay online",

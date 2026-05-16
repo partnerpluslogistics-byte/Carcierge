@@ -18,6 +18,8 @@ import ServiceRequests from "@/pages/ServiceRequests";
 import AdminApprovals from "@/pages/AdminApprovals";
 import AdminAnalytics from "@/pages/AdminAnalytics";
 import Payments from "@/pages/Payments";
+import Search from "@/pages/Search";
+import Reports from "@/pages/Reports";
 import NotFound from "@/pages/NotFound";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -46,6 +48,8 @@ function Router() {
           <Route path="/admin/approvals" component={AdminApprovals} />
           <Route path="/admin/analytics" component={AdminAnalytics} />
           <Route path="/payments" component={Payments} />
+          <Route path="/search" component={Search} />
+          <Route path="/reports" component={Reports} />
           <Route path="/" component={Dashboard} />
           <Route component={NotFound} />
         </Switch>

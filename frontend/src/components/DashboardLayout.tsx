@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Car, Settings, User, Users, ClipboardList, CarFront, CheckSquare, TrendingUp, CreditCard } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Car, Settings, User, Users, ClipboardList, CarFront, CheckSquare, TrendingUp, CreditCard, Search, FileText } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -34,6 +34,8 @@ const baseMenuItems = [
   { icon: Car, label: "Vehicles", path: "/vehicles" },
   { icon: ClipboardList, label: "Service Requests", path: "/service-requests" },
   { icon: CreditCard, label: "Payments", path: "/payments" },
+  { icon: Search, label: "Search", path: "/search" },
+  { icon: FileText, label: "Reports", path: "/reports" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

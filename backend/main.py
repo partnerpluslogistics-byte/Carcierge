@@ -29,6 +29,7 @@ from routers import bank_transfers as bank_transfers_router
 from routers import notifications as notifications_router
 from routers import admin as admin_router
 from routers import vehicle_history as vehicle_history_router
+from routers import search as search_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
