@@ -1,0 +1,123 @@
+import os
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from database import engine, SessionLocal
+import models
+from auth import hash_password
+
+# Routers
+from routers import auth as auth_router
+from routers import users as users_router
+from routers import owners as owners_router
+from routers import vehicles as vehicles_router
+from routers import registrations as registrations_router
+from routers import insurance as insurance_router
+from routers import inspections as inspections_router
+from routers import documents as documents_router
+from routers import dashboard as dashboard_router
+from routers import service_requests as service_requests_router
+from routers import payments as payments_router
+from routers import subscriptions as subscriptions_router
+from routers import bank_transfers as bank_transfers_router
+from routers import notifications as notifications_router
+from routers import admin as admin_router
+from routers import vehicle_history as vehicle_history_router
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "PartnerPluslogistics@gmail.com")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123")
+
+
+def create_tables():
+    models.Base.metadata.create_all(bind=engine)
+    logger.info("Database tables created/verified.")
+
+
+def seed_admin():
+    db = SessionLocal()
+    try:
+        existing_admin = db.query(models.User).filter(models.User.role == "admin").first()
+        if not existing_admin:
+            admin = models.User(
+                email=DEFAULT_ADMIN_EMAIL,
+                name="Admin",
+                password_hash=hash_password(DEFAULT_ADMIN_PASSWORD),
+                role="admin",
+            )
+            db.add(admin)
+            db.commit()
+            logger.info(f"Default admin user created: {DEFAULT_ADMIN_EMAIL}")
+        else:
+            logger.info(f"Admin user already exists: {existing_admin.email}")
+    except Exception as e:
+        logger.error(f"Failed to seed admin user: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_tables()
+    seed_admin()
+    yield
+
+
+app = FastAPI(
+    title="Carcierge API",
+    description="Vehicle management platform backend",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ─── Static Files ─────────────────────────────────────────────────────────────
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR, html=False), name="uploads")
+
+# ─── Routers ──────────────────────────────────────────────────────────────────
+API_PREFIX = "/api"
+
+app.include_router(auth_router.router, prefix=API_PREFIX)
+app.include_router(users_router.router, prefix=API_PREFIX)
+app.include_router(owners_router.router, prefix=API_PREFIX)
+app.include_router(vehicles_router.router, prefix=API_PREFIX)
+app.include_router(registrations_router.router, prefix=API_PREFIX)
+app.include_router(insurance_router.router, prefix=API_PREFIX)
+app.include_router(inspections_router.router, prefix=API_PREFIX)
+app.include_router(documents_router.router, prefix=API_PREFIX)
+app.include_router(dashboard_router.router, prefix=API_PREFIX)
+app.include_router(service_requests_router.router, prefix=API_PREFIX)
+app.include_router(payments_router.router, prefix=API_PREFIX)
+app.include_router(subscriptions_router.router, prefix=API_PREFIX)
+app.include_router(bank_transfers_router.router, prefix=API_PREFIX)
+app.include_router(notifications_router.router, prefix=API_PREFIX)
+app.include_router(admin_router.router, prefix=API_PREFIX)
+app.include_router(vehicle_history_router.router, prefix=API_PREFIX)
+
+
+@app.get("/")
+def root():
+    return {"message": "Carcierge API is running", "docs": "/docs"}
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
