@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { trpc } from "@/lib/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { vehicleApi, registrationApi, insuranceApi, inspectionApi, adminUserApi } from "@/lib/api";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ function getExpiryStatus(dateStr: string | null | undefined) {
 
 export default function AdminVehicles() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -72,43 +74,69 @@ export default function AdminVehicles() {
     country: "",
   });
 
-  const updateRegMutation = trpc.registrations.update.useMutation({
-    onSuccess: () => { toast.success("Registration updated!"); setEditRegOpen(false); vehiclesQuery.refetch(); },
-    onError: (err) => toast.error(err.message),
+  const vehiclesQuery = useQuery({
+    queryKey: ["admin", "vehicles", "all"],
+    queryFn: vehicleApi.adminListAll,
   });
-  const updateInsMutation = trpc.insurancePolicies.update.useMutation({
-    onSuccess: () => { toast.success("Insurance updated!"); setEditInsOpen(false); vehiclesQuery.refetch(); },
-    onError: (err) => toast.error(err.message),
-  });
-  const updateInspMutation = trpc.inspections.update.useMutation({
-    onSuccess: () => { toast.success("Inspection updated!"); setEditInspOpen(false); vehiclesQuery.refetch(); },
-    onError: (err) => toast.error(err.message),
-  });
+  const allVehicles = vehiclesQuery.data || [];
 
-  const updateVehicleMutation = trpc.vehicles.update.useMutation({
+  const usersQuery = useQuery({
+    queryKey: ["admin", "users"],
+    queryFn: adminUserApi.listAll,
+  });
+  const allUsers = usersQuery.data || [];
+
+  const updateVehicleMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; [key: string]: any }) => vehicleApi.update(id, data),
     onSuccess: () => {
       toast.success("Vehicle updated successfully!");
       setEditVehicleOpen(false);
       setEditVehicleId(null);
-      vehiclesQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message),
   });
 
-  const vehiclesQuery = trpc.adminVehicles.listAll.useQuery();
-  const allVehicles = vehiclesQuery.data || [];
-  const bulkImportMutation = trpc.vehicles.bulkImport.useMutation();
-  const usersQuery = trpc.admin.listUsers.useQuery();
-  const allUsers = usersQuery.data || [];
-  const adminCreateVehicleMutation = trpc.vehicles.adminCreate.useMutation({
+  const updateRegMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; [key: string]: any }) => registrationApi.update(id, data),
+    onSuccess: () => {
+      toast.success("Registration updated!");
+      setEditRegOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message),
+  });
+
+  const updateInsMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; [key: string]: any }) => insuranceApi.update(id, data),
+    onSuccess: () => {
+      toast.success("Insurance updated!");
+      setEditInsOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message),
+  });
+
+  const updateInspMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; [key: string]: any }) => inspectionApi.update(id, data),
+    onSuccess: () => {
+      toast.success("Inspection updated!");
+      setEditInspOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message),
+  });
+
+  const adminCreateVehicleMutation = useMutation({
+    mutationFn: (data: Record<string, any>) => vehicleApi.adminCreate(data),
     onSuccess: () => {
       toast.success("Vehicle registered successfully on behalf of user!");
       setAddVehicleOpen(false);
       setAvTargetUserId("");
       setAvForm({ ownerFullName: "", ownerEmail: "", ownerPhone: "", plateNumber: "", vin: "", make: "", model: "", year: new Date().getFullYear().toString(), color: "", vehicleType: "Car", engineType: "Petrol", country: "" });
-      vehiclesQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message),
   });
 
   if (user?.role !== "admin") {
@@ -147,7 +175,6 @@ export default function AdminVehicles() {
       v.insurancePolicies?.some((i: any) => i.policyNumber?.toLowerCase().includes(q) || i.insuranceProvider?.toLowerCase().includes(q))
     );
   });
-
 
   const exportCSV = () => {
     const headers = ["Vehicle Code", "Plate", "Make", "Model", "Year", "Type", "Engine", "Color", "Country", "Owner", "Owner Email", "Owner Phone", "Reg Number", "Reg Authority", "Reg Expiry", "Insurance Provider", "Policy Number", "Coverage", "Insurance Expiry", "Inspection Date", "Inspection Expiry"];
@@ -268,10 +295,9 @@ export default function AdminVehicles() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filtered.map((vehicle) => {
+          {filtered.map((vehicle: any) => {
             const latestReg = vehicle.registrations?.[vehicle.registrations.length - 1];
             const latestIns = vehicle.insurancePolicies?.[vehicle.insurancePolicies.length - 1];
-            const latestInsp = vehicle.inspections?.[vehicle.inspections.length - 1];
 
             return (
               <Card key={vehicle.id} className="overflow-hidden">
@@ -373,7 +399,7 @@ export default function AdminVehicles() {
                             <FileText className="w-4 h-4" /> Registration ({vehicle.registrations?.length || 0})
                           </h3>
                           {vehicle.registrations?.length ? (
-                            vehicle.registrations.map((reg) => {
+                            vehicle.registrations.map((reg: any) => {
                               const s = reg.expiryDate ? getExpiryStatus(String(reg.expiryDate)) : { color: "bg-blue-500/20 text-blue-400", label: "No Expiry" };
                               return (
                                 <div key={reg.id} className="text-sm space-y-1 mb-2 p-2 rounded bg-accent/5">
@@ -382,18 +408,18 @@ export default function AdminVehicles() {
                                     <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => {
                                       setEditRegId(reg.id);
                                       setErForm({
-                                        registrationNumber: (reg as any).registrationNumber || "",
-                                        issuingAuthority: (reg as any).issuingAuthority || "",
-                                        registrationDate: (reg as any).registrationDate ? String((reg as any).registrationDate).slice(0,10) : "",
-                                        expiryDate: reg.expiryDate ? String(reg.expiryDate).slice(0,10) : "",
-                                        country: (reg as any).country || "",
-                                        status: ((reg as any).status as "Active" | "Expiring Soon" | "Expired") || "Active",
+                                        registrationNumber: reg.registrationNumber || "",
+                                        issuingAuthority: reg.issuingAuthority || "",
+                                        registrationDate: reg.registrationDate ? String(reg.registrationDate).slice(0, 10) : "",
+                                        expiryDate: reg.expiryDate ? String(reg.expiryDate).slice(0, 10) : "",
+                                        country: reg.country || "",
+                                        status: (reg.status as "Active" | "Expiring Soon" | "Expired") || "Active",
                                       });
                                       setEditRegOpen(true);
                                     }}><Pencil className="h-3 w-3" /></Button>
                                   </div>
                                   <p><span className="text-muted-foreground">Expires:</span> {reg.expiryDate ? new Date(String(reg.expiryDate)).toLocaleDateString() : "No Expiry"}</p>
-                                  {(reg as any).country && <p><span className="text-muted-foreground">Country:</span> {(reg as any).country}</p>}
+                                  {reg.country && <p><span className="text-muted-foreground">Country:</span> {reg.country}</p>}
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.color}`}>{s.label}</span>
                                 </div>
                               );
@@ -409,7 +435,7 @@ export default function AdminVehicles() {
                             <Shield className="w-4 h-4" /> Insurance ({vehicle.insurancePolicies?.length || 0})
                           </h3>
                           {vehicle.insurancePolicies?.length ? (
-                            vehicle.insurancePolicies.map((pol) => {
+                            vehicle.insurancePolicies.map((pol: any) => {
                               const s = getExpiryStatus(String(pol.policyEndDate));
                               return (
                                 <div key={pol.id} className="text-sm space-y-1 mb-2 p-2 rounded bg-accent/5">
@@ -422,10 +448,10 @@ export default function AdminVehicles() {
                                         insuranceProvider: pol.insuranceProvider || "",
                                         coverageType: (pol.coverageType as "Comprehensive" | "3rd Party" | "Mandatory") || "Comprehensive",
                                         premiumAmount: pol.premiumAmount ? String(pol.premiumAmount) : "",
-                                        policyStartDate: pol.policyStartDate ? String(pol.policyStartDate).slice(0,10) : "",
-                                        policyEndDate: pol.policyEndDate ? String(pol.policyEndDate).slice(0,10) : "",
-                                        country: (pol as any).country || "",
-                                        status: ((pol as any).status as "Active" | "Expiring Soon" | "Expired") || "Active",
+                                        policyStartDate: pol.policyStartDate ? String(pol.policyStartDate).slice(0, 10) : "",
+                                        policyEndDate: pol.policyEndDate ? String(pol.policyEndDate).slice(0, 10) : "",
+                                        country: pol.country || "",
+                                        status: (pol.status as "Active" | "Expiring Soon" | "Expired") || "Active",
                                       });
                                       setEditInsOpen(true);
                                     }}><Pencil className="h-3 w-3" /></Button>
@@ -433,7 +459,7 @@ export default function AdminVehicles() {
                                   <p><span className="text-muted-foreground">Provider:</span> {pol.insuranceProvider}</p>
                                   <p><span className="text-muted-foreground">Type:</span> {pol.coverageType}</p>
                                   <p><span className="text-muted-foreground">Expires:</span> {new Date(String(pol.policyEndDate)).toLocaleDateString()}</p>
-                                  {(pol as any).country && <p><span className="text-muted-foreground">Country:</span> {(pol as any).country}</p>}
+                                  {pol.country && <p><span className="text-muted-foreground">Country:</span> {pol.country}</p>}
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.color}`}>{s.label}</span>
                                 </div>
                               );
@@ -449,7 +475,7 @@ export default function AdminVehicles() {
                             <Wrench className="w-4 h-4" /> Inspection ({vehicle.inspections?.length || 0})
                           </h3>
                           {vehicle.inspections?.length ? (
-                            vehicle.inspections.map((insp) => {
+                            vehicle.inspections.map((insp: any) => {
                               const s = getExpiryStatus(String(insp.expiryDate));
                               return (
                                 <div key={insp.id} className="text-sm space-y-1 mb-2 p-2 rounded bg-accent/5">
@@ -459,17 +485,17 @@ export default function AdminVehicles() {
                                       setEditInspId(insp.id);
                                       setEinForm({
                                         invoiceNumber: insp.invoiceNumber || "",
-                                        inspectionDate: insp.inspectionDate ? String(insp.inspectionDate).slice(0,10) : "",
-                                        expiryDate: insp.expiryDate ? String(insp.expiryDate).slice(0,10) : "",
-                                        country: (insp as any).country || "",
-                                        status: ((insp as any).status as "Active" | "Expiring Soon" | "Expired") || "Active",
+                                        inspectionDate: insp.inspectionDate ? String(insp.inspectionDate).slice(0, 10) : "",
+                                        expiryDate: insp.expiryDate ? String(insp.expiryDate).slice(0, 10) : "",
+                                        country: insp.country || "",
+                                        status: (insp.status as "Active" | "Expiring Soon" | "Expired") || "Active",
                                       });
                                       setEditInspOpen(true);
                                     }}><Pencil className="h-3 w-3" /></Button>
                                   </div>
                                   <p><span className="text-muted-foreground">Date:</span> {new Date(String(insp.inspectionDate)).toLocaleDateString()}</p>
                                   <p><span className="text-muted-foreground">Expires:</span> {new Date(String(insp.expiryDate)).toLocaleDateString()}</p>
-                                  {(insp as any).country && <p><span className="text-muted-foreground">Country:</span> {(insp as any).country}</p>}
+                                  {insp.country && <p><span className="text-muted-foreground">Country:</span> {insp.country}</p>}
                                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.color}`}>{s.label}</span>
                                 </div>
                               );
@@ -865,12 +891,17 @@ export default function AdminVehicles() {
                     engineType: (["Petrol", "Diesel", "Electric", "Hybrid"].includes(r.engineType) ? r.engineType : "Petrol") as "Petrol" | "Diesel" | "Electric" | "Hybrid",
                     country: r.country || undefined,
                   }));
-                  const result = await bulkImportMutation.mutateAsync({ vehicles: vehicleRows });
+                  const formData = new FormData();
+                  formData.append("vehicles", JSON.stringify(vehicleRows));
+                  const result = await vehicleApi.adminBulkImport(formData);
                   setImportResults(result);
-                  if (result.imported > 0) { toast.success(`${result.imported} vehicle(s) imported`); vehiclesQuery.refetch(); }
+                  if (result.imported > 0) {
+                    toast.success(`${result.imported} vehicle(s) imported`);
+                    queryClient.invalidateQueries({ queryKey: ["admin", "vehicles"] });
+                  }
                   if (result.failed > 0) toast.error(`${result.failed} vehicle(s) failed`);
                 } catch (err: any) {
-                  toast.error(err.message || "Import failed");
+                  toast.error(err?.response?.data?.detail || err.message || "Import failed");
                 } finally {
                   setIsImporting(false);
                 }
@@ -896,7 +927,7 @@ export default function AdminVehicles() {
             <Select value={avTargetUserId} onValueChange={setAvTargetUserId}>
               <SelectTrigger><SelectValue placeholder="Choose a user..." /></SelectTrigger>
               <SelectContent>
-                {allUsers.map((u: any) => (
+                {(allUsers as any[]).map((u) => (
                   <SelectItem key={u.id} value={String(u.id)}>{u.name || u.email} ({u.email})</SelectItem>
                 ))}
               </SelectContent>

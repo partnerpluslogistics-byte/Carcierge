@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { serviceRequestApi, vehicleApi } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,13 +63,24 @@ function StatusBadge({ status }: { status: StatusType }) {
 
 export default function ServiceRequests() {
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === "admin";
 
-  // Fetch data
-  const myRequestsQuery = trpc.serviceRequests.listMine.useQuery();
-  const allRequestsQuery = trpc.serviceRequests.listAll.useQuery(undefined, { enabled: isAdmin });
-  const vehiclesQuery = trpc.vehicles.list.useQuery();
+  const myRequestsQuery = useQuery({
+    queryKey: ["service-requests", "mine"],
+    queryFn: serviceRequestApi.listMine,
+  });
+
+  const allRequestsQuery = useQuery({
+    queryKey: ["service-requests", "all"],
+    queryFn: serviceRequestApi.listAll,
+    enabled: isAdmin,
+  });
+
+  const vehiclesQuery = useQuery({
+    queryKey: ["vehicles", "list"],
+    queryFn: vehicleApi.list,
+  });
 
   // New request form state
   const [newDialogOpen, setNewDialogOpen] = useState(false);
@@ -87,44 +99,50 @@ export default function ServiceRequests() {
   const [editVehicleId, setEditVehicleId] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
-  const updateMutation = trpc.serviceRequests.update.useMutation({
+  const updateMutation = useMutation({
+    mutationFn: ({ id, ...data }: { id: number; requestType: string; vehicleId: number | null; notes: string | null }) =>
+      serviceRequestApi.update(id, data),
     onSuccess: () => {
       toast.success("Request updated");
-      utils.serviceRequests.listMine.invalidate();
-      if (isAdmin) utils.serviceRequests.listAll.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["service-requests", "mine"] });
+      if (isAdmin) queryClient.invalidateQueries({ queryKey: ["service-requests", "all"] });
       setEditTarget(null);
     },
-    onError: (err) => toast.error(err.message || "Failed to update request"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to update request"),
   });
 
-  const createMutation = trpc.serviceRequests.create.useMutation({
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, any>) => serviceRequestApi.create(data),
     onSuccess: () => {
-      utils.serviceRequests.listMine.invalidate();
-      if (isAdmin) utils.serviceRequests.listAll.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["service-requests", "mine"] });
+      if (isAdmin) queryClient.invalidateQueries({ queryKey: ["service-requests", "all"] });
       toast.success("Service request submitted successfully.");
       setNewDialogOpen(false);
       resetForm();
     },
-    onError: (err) => toast.error(err.message || "Failed to submit request"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to submit request"),
   });
 
-  const cancelMutation = trpc.serviceRequests.cancel.useMutation({
+  const cancelMutation = useMutation({
+    mutationFn: (id: number) => serviceRequestApi.cancel(id),
     onSuccess: () => {
       toast.success("Request cancelled");
-      utils.serviceRequests.listMine.invalidate();
-      if (isAdmin) utils.serviceRequests.listAll.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["service-requests", "mine"] });
+      if (isAdmin) queryClient.invalidateQueries({ queryKey: ["service-requests", "all"] });
     },
-    onError: (err) => toast.error(err.message || "Failed to cancel request"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to cancel request"),
   });
 
-  const updateStatusMutation = trpc.serviceRequests.updateStatus.useMutation({
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status, adminNotes }: { id: number; status: string; adminNotes?: string }) =>
+      serviceRequestApi.updateStatus(id, status, adminNotes),
     onSuccess: () => {
       toast.success("Request updated");
-      utils.serviceRequests.listAll.invalidate();
-      utils.serviceRequests.listMine.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["service-requests", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["service-requests", "mine"] });
       setUpdateTarget(null);
     },
-    onError: (err) => toast.error(err.message || "Failed to update request"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to update request"),
   });
 
   const resetForm = () => {
@@ -134,7 +152,7 @@ export default function ServiceRequests() {
   const handleCreate = () => {
     if (!reqType) { toast.error("Please select a request type"); return; }
     createMutation.mutate({
-      requestType: reqType as RequestType,
+      requestType: reqType,
       vehicleId: reqVehicleId ? parseInt(reqVehicleId) : undefined,
       notes: reqNotes || undefined,
     });
@@ -152,7 +170,7 @@ export default function ServiceRequests() {
     const parsedVehicleId = editVehicleId && editVehicleId !== "none" ? parseInt(editVehicleId, 10) : null;
     updateMutation.mutate({
       id: editTarget.id,
-      requestType: editType as RequestType,
+      requestType: editType,
       vehicleId: parsedVehicleId && !isNaN(parsedVehicleId) ? parsedVehicleId : null,
       notes: editNotes || null,
     });
@@ -200,7 +218,7 @@ export default function ServiceRequests() {
       </TableHeader>
       <TableBody>
         {requests.map((req) => {
-          const vehicle = vehicles.find((v) => v.id === req.vehicleId);
+          const vehicle = (vehicles as any[]).find((v) => v.id === req.vehicleId);
           return (
             <TableRow key={req.id}>
               <TableCell className="font-medium">{req.requestType}</TableCell>
@@ -237,7 +255,7 @@ export default function ServiceRequests() {
                         variant="ghost"
                         size="icon"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => cancelMutation.mutate({ id: req.id })}
+                        onClick={() => cancelMutation.mutate(req.id)}
                         title="Cancel request"
                       >
                         <X className="h-4 w-4" />
@@ -360,7 +378,7 @@ export default function ServiceRequests() {
                   <SelectValue placeholder="Select a vehicle…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {vehicles.map((v) => (
+                  {(vehicles as any[]).map((v) => (
                     <SelectItem key={v.id} value={String(v.id)}>
                       {v.make} {v.model} — {v.plateNumber}
                     </SelectItem>
@@ -413,7 +431,7 @@ export default function ServiceRequests() {
                 <SelectTrigger><SelectValue placeholder="Select vehicle" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No specific vehicle</SelectItem>
-                  {vehicles.map((v: any) => (
+                  {(vehicles as any[]).map((v) => (
                     <SelectItem key={v.id} value={String(v.id)}>
                       {v.make} {v.model} ({v.plateNumber})
                     </SelectItem>
