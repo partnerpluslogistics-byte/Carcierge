@@ -120,6 +120,7 @@ app.include_router(bank_transfers_router.router, prefix=API_PREFIX)
 app.include_router(notifications_router.router, prefix=API_PREFIX)
 app.include_router(admin_router.router, prefix=API_PREFIX)
 app.include_router(vehicle_history_router.router, prefix=API_PREFIX)
+app.include_router(search_router.router, prefix=API_PREFIX)
 
 
 @app.get("/")
