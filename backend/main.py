@@ -2,13 +2,15 @@ import os
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from database import engine, SessionLocal
 import models
-from auth import hash_password
+from auth import hash_password, get_current_admin
+from jobs import send_expiry_reminders
 
 # Routers
 from routers import auth as auth_router
@@ -70,7 +72,13 @@ def seed_admin():
 async def lifespan(app: FastAPI):
     create_tables()
     seed_admin()
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(send_expiry_reminders, 'cron', hour=8, minute=0, id='expiry_reminders')
+    scheduler.start()
+    logger.info("Scheduler started - expiry reminders will run daily at 08:00 UTC")
     yield
+    scheduler.shutdown()
+    logger.info("Scheduler shut down")
 
 
 app = FastAPI(
@@ -121,3 +129,9 @@ def root():
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.post("/api/admin/trigger-reminders")
+def trigger_reminders(current_user: models.User = Depends(get_current_admin)):
+    send_expiry_reminders()
+    return {"message": "Expiry reminders triggered"}
