@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { bankTransferApi } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,40 +99,50 @@ function exportPaymentsCSV(payments: any[]) {
 export default function Payments() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
 
   const [selectedTransfer, setSelectedTransfer] = useState<any>(null);
   const [paymentMethod, setPaymentMethod] = useState("whish");
   const [confirmingTransfer, setConfirmingTransfer] = useState<any>(null);
   const [confirmRef, setConfirmRef] = useState("");
-
   const [showArchived, setShowArchived] = useState(false);
 
-  const transfersQuery = trpc.bankTransfers.getMine.useQuery();
-  const allTransfersQuery = trpc.bankTransfers.getAll.useQuery(undefined, { enabled: isAdmin });
-  const confirmMutation = trpc.bankTransfers.confirmByUser.useMutation();
-  const archiveMutation = trpc.bankTransfers.archive.useMutation({
+  const transfersQuery = useQuery({
+    queryKey: ["bank-transfers", "mine"],
+    queryFn: bankTransferApi.getMine,
+  });
+
+  const allTransfersQuery = useQuery({
+    queryKey: ["bank-transfers", "all"],
+    queryFn: bankTransferApi.getAll,
+    enabled: isAdmin,
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (transferId: number) => bankTransferApi.archive(transferId),
     onSuccess: () => {
       toast.success("Payment archived.");
-      utils.bankTransfers.getMine.invalidate();
-      utils.bankTransfers.getAll.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["bank-transfers", "mine"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-transfers", "all"] });
     },
-    onError: (e: any) => toast.error(e.message || "Failed to archive payment"),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || e.message || "Failed to archive payment"),
   });
-  const unarchiveMutation = trpc.bankTransfers.unarchive.useMutation({
+
+  const unarchiveMutation = useMutation({
+    mutationFn: (transferId: number) => bankTransferApi.unarchive(transferId),
     onSuccess: () => {
       toast.success("Payment restored.");
-      utils.bankTransfers.getMine.invalidate();
-      utils.bankTransfers.getAll.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["bank-transfers", "mine"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-transfers", "all"] });
     },
-    onError: (e: any) => toast.error(e.message || "Failed to restore payment"),
+    onError: (e: any) => toast.error(e?.response?.data?.detail || e.message || "Failed to restore payment"),
   });
-  const utils = trpc.useUtils();
 
-  const transfers = (transfersQuery.data ?? []).filter((t: any) => showArchived ? !!t.archivedAt : !t.archivedAt);
-  const allTransfers = (allTransfersQuery.data ?? []).filter((t: any) => showArchived ? !!t.archivedAt : !t.archivedAt);
-  const pendingTransfers = transfers.filter((t: any) => !t.confirmedByUser && !t.approvedByAdmin && !t.rejectedAt);
-  const inProgressTransfers = transfers.filter((t: any) => t.confirmedByUser && !t.approvedByAdmin && !t.rejectedAt);
-  const completedTransfers = transfers.filter((t: any) => t.approvedByAdmin || t.rejectedAt);
+  const transfers = ((transfersQuery.data ?? []) as any[]).filter((t) => showArchived ? !!t.archivedAt : !t.archivedAt);
+  const allTransfers = ((allTransfersQuery.data ?? []) as any[]).filter((t) => showArchived ? !!t.archivedAt : !t.archivedAt);
+  const pendingTransfers = transfers.filter((t) => !t.confirmedByUser && !t.approvedByAdmin && !t.rejectedAt);
+  const inProgressTransfers = transfers.filter((t) => t.confirmedByUser && !t.approvedByAdmin && !t.rejectedAt);
+  const completedTransfers = transfers.filter((t) => t.approvedByAdmin || t.rejectedAt);
 
   const selectedMethod = PAYMENT_METHODS.find(m => m.id === paymentMethod);
 
@@ -143,16 +154,13 @@ export default function Payments() {
   const handleConfirmPayment = async () => {
     if (!confirmingTransfer) return;
     try {
-      await confirmMutation.mutateAsync({
-        transferId: confirmingTransfer.id,
-        referenceNumber: confirmRef || undefined,
-      });
+      await bankTransferApi.confirm(confirmingTransfer.id);
       toast.success("Payment confirmation submitted! Admin will verify and approve shortly.");
-      utils.bankTransfers.getMine.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["bank-transfers", "mine"] });
       setConfirmingTransfer(null);
       setSelectedTransfer(null);
     } catch (e: any) {
-      toast.error(e.message || "Failed to confirm payment");
+      toast.error(e?.response?.data?.detail || e.message || "Failed to confirm payment");
     }
   };
 
@@ -209,18 +217,18 @@ export default function Payments() {
       </Card>
 
       {isAdmin ? (
-        /* ── ADMIN VIEW: full payment list with user details ── */
+        /* Admin VIEW: full payment list with user details */
         <Tabs defaultValue="all">
           <TabsList>
             <TabsTrigger value="all">All Payments ({allTransfers.length})</TabsTrigger>
-            <TabsTrigger value="pending">Pending ({allTransfers.filter((t: any) => !t.approvedByAdmin && !t.rejectedAt).length})</TabsTrigger>
-            <TabsTrigger value="approved">Approved ({allTransfers.filter((t: any) => t.approvedByAdmin).length})</TabsTrigger>
+            <TabsTrigger value="pending">Pending ({allTransfers.filter((t) => !t.approvedByAdmin && !t.rejectedAt).length})</TabsTrigger>
+            <TabsTrigger value="approved">Approved ({allTransfers.filter((t) => t.approvedByAdmin).length})</TabsTrigger>
           </TabsList>
 
           {["all", "pending", "approved"].map(tab => {
             const filtered = tab === "all" ? allTransfers
-              : tab === "pending" ? allTransfers.filter((t: any) => !t.approvedByAdmin && !t.rejectedAt)
-              : allTransfers.filter((t: any) => t.approvedByAdmin);
+              : tab === "pending" ? allTransfers.filter((t) => !t.approvedByAdmin && !t.rejectedAt)
+              : allTransfers.filter((t) => t.approvedByAdmin);
             return (
               <TabsContent key={tab} value={tab} className="mt-4">
                 {allTransfersQuery.isLoading ? (
@@ -245,7 +253,7 @@ export default function Payments() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filtered.map((t: any) => (
+                          {filtered.map((t) => (
                             <TableRow key={t.id}>
                               <TableCell className="font-mono text-xs text-muted-foreground">#{t.id}</TableCell>
                               <TableCell>
@@ -270,11 +278,11 @@ export default function Payments() {
                               <TableCell className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleDateString()}</TableCell>
                               <TableCell>
                                 {t.archivedAt ? (
-                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" onClick={() => unarchiveMutation.mutate({ transferId: t.id })} disabled={unarchiveMutation.isPending}>
+                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" onClick={() => unarchiveMutation.mutate(t.id)} disabled={unarchiveMutation.isPending}>
                                     <ArchiveRestore className="w-3 h-3" /> Restore
                                   </Button>
                                 ) : (
-                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-muted-foreground" onClick={() => archiveMutation.mutate({ transferId: t.id })} disabled={archiveMutation.isPending}>
+                                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-muted-foreground" onClick={() => archiveMutation.mutate(t.id)} disabled={archiveMutation.isPending}>
                                     <Archive className="w-3 h-3" /> Archive
                                   </Button>
                                 )}
@@ -291,7 +299,7 @@ export default function Payments() {
           })}
         </Tabs>
       ) : (
-        /* ── USER VIEW ── */
+        /* User VIEW */
         <div className="space-y-6">
           {/* Pending Payments — need action */}
           {pendingTransfers.length > 0 && (
@@ -299,7 +307,7 @@ export default function Payments() {
               <h2 className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-2">
                 <AlertCircle className="w-5 h-5" /> Payments Requiring Action ({pendingTransfers.length})
               </h2>
-              {pendingTransfers.map((transfer: any) => (
+              {pendingTransfers.map((transfer) => (
                 <Card key={transfer.id} className="border-amber-300 dark:border-amber-700">
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between gap-4">
@@ -330,7 +338,7 @@ export default function Payments() {
               <h2 className="text-lg font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-2">
                 <Clock className="w-5 h-5" /> Awaiting Admin Approval ({inProgressTransfers.length})
               </h2>
-              {inProgressTransfers.map((transfer: any) => (
+              {inProgressTransfers.map((transfer) => (
                 <Card key={transfer.id} className="border-blue-200 dark:border-blue-800">
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between gap-4">
@@ -363,7 +371,7 @@ export default function Payments() {
               <h2 className="text-lg font-semibold text-muted-foreground flex items-center gap-2">
                 <CheckCircle className="w-5 h-5" /> Payment History ({completedTransfers.length})
               </h2>
-              {completedTransfers.map((transfer: any) => (
+              {completedTransfers.map((transfer) => (
                 <Card key={transfer.id} className="border-border/50 opacity-80">
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between gap-4">
@@ -387,7 +395,7 @@ export default function Payments() {
                         size="sm"
                         variant="ghost"
                         className="gap-1 text-muted-foreground shrink-0"
-                        onClick={() => archiveMutation.mutate({ transferId: transfer.id })}
+                        onClick={() => archiveMutation.mutate(transfer.id)}
                         disabled={archiveMutation.isPending}
                       >
                         <Archive className="w-4 h-4" /> Archive
@@ -491,10 +499,9 @@ export default function Payments() {
             <Button variant="outline" onClick={() => { setConfirmingTransfer(null); setSelectedTransfer(confirmingTransfer); }}>Back</Button>
             <Button
               onClick={handleConfirmPayment}
-              disabled={confirmMutation.isPending}
               className="gap-2 bg-green-600 hover:bg-green-700 text-white"
             >
-              {confirmMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              <CheckCircle className="w-4 h-4" />
               I've Made the Payment
             </Button>
           </DialogFooter>

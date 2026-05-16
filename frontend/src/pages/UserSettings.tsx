@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { trpc } from "@/lib/trpc";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { userApi } from "@/lib/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +22,12 @@ import { useLocation } from "wouter";
 
 export default function UserSettings() {
   const { user } = useAuth();
-  const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
 
-  const { data: profile, isLoading } = trpc.userProfile.get.useQuery();
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ["user", "profile"],
+    queryFn: userApi.getProfile,
+  });
 
   const [email, setEmail] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -39,44 +43,48 @@ export default function UserSettings() {
     if (profile) {
       setEmail(profile.email ?? "");
       setPhoneNumber(profile.phoneNumber ?? "");
-      setNotifyByEmail(profile.notifyByEmail === 1);
-      setNotifyByPush(profile.notifyByPush === 1);
-      setNotifyRegistration((profile as any).notifyRegistration !== 0);
-      setNotifyInsurance((profile as any).notifyInsurance !== 0);
-      setNotifyInspection((profile as any).notifyInspection !== 0);
+      setNotifyByEmail(profile.notifyByEmail === 1 || profile.notifyByEmail === true);
+      setNotifyByPush(profile.notifyByPush === 1 || profile.notifyByPush === true);
+      setNotifyRegistration(profile.notifyRegistration !== 0 && profile.notifyRegistration !== false);
+      setNotifyInsurance(profile.notifyInsurance !== 0 && profile.notifyInsurance !== false);
+      setNotifyInspection(profile.notifyInspection !== 0 && profile.notifyInspection !== false);
     }
   }, [profile]);
 
-  const updateProfileMutation = trpc.userProfile.update.useMutation({
+  const updateProfileMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => userApi.updateProfile(data),
     onSuccess: () => {
       toast.success("Contact details updated");
-      utils.userProfile.get.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["user", "profile"] });
       setProfileDirty(false);
     },
-    onError: (err) => toast.error(err.message || "Failed to update profile"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to update profile"),
   });
 
-  const updateNotificationsMutation = trpc.userProfile.updateNotifications.useMutation({
+  const updateNotificationsMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => userApi.updateNotifications(data),
     onSuccess: () => {
       toast.success("Notification preferences saved");
-      utils.userProfile.get.invalidate();
+      queryClient.invalidateQueries({ queryKey: ["user", "profile"] });
       setNotifDirty(false);
     },
-    onError: (err) => toast.error(err.message || "Failed to update notifications"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to update notifications"),
   });
 
   const [, setLocation] = useLocation();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
-  const deleteAccountMutation = trpc.userProfile.deleteAccount.useMutation({
+  const deleteAccountMutation = useMutation({
+    mutationFn: () => userApi.deleteAccount(),
     onSuccess: () => {
       toast.success("Your account has been deleted.");
       setDeleteDialogOpen(false);
-      // Redirect to home after deletion
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("auth_user");
       setTimeout(() => setLocation("/"), 1000);
     },
-    onError: (err) => toast.error(err.message || "Failed to delete account"),
+    onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to delete account"),
   });
 
   const firstName = (user?.name ?? "").split(" ")[0] || "there";
@@ -351,7 +359,7 @@ export default function UserSettings() {
             <Button
               variant="destructive"
               disabled={deleteConfirmText !== "DELETE" || deleteAccountMutation.isPending}
-              onClick={() => deleteAccountMutation.mutate({ confirmText: "DELETE" })}
+              onClick={() => deleteAccountMutation.mutate()}
             >
               {deleteAccountMutation.isPending ? "Deleting…" : "Delete Account"}
             </Button>
