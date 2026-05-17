@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
@@ -9,6 +10,10 @@ import schemas
 from auth import get_current_user, get_current_admin
 
 router = APIRouter(tags=["Users"])
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
 
 
 # ─── User Profile ─────────────────────────────────────────────────────────────
@@ -24,11 +29,17 @@ def update_profile(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    if payload.email and payload.email != current_user.email:
-        existing = db.query(models.User).filter(models.User.email == payload.email).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already in use")
-        current_user.email = payload.email
+    if payload.email:
+        email = normalize_email(payload.email)
+        if email != normalize_email(current_user.email):
+            existing = (
+                db.query(models.User)
+                .filter(func.lower(models.User.email) == email, models.User.id != current_user.id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+        current_user.email = email
 
     if payload.name is not None:
         current_user.name = payload.name
@@ -94,11 +105,17 @@ def admin_update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if payload.email and payload.email != user.email:
-        existing = db.query(models.User).filter(models.User.email == payload.email).first()
-        if existing:
-            raise HTTPException(status_code=400, detail="Email already in use")
-        user.email = payload.email
+    if payload.email:
+        email = normalize_email(payload.email)
+        if email != normalize_email(user.email):
+            existing = (
+                db.query(models.User)
+                .filter(func.lower(models.User.email) == email, models.User.id != user.id)
+                .first()
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Email already in use")
+        user.email = email
 
     if payload.name is not None:
         user.name = payload.name

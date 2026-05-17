@@ -359,6 +359,19 @@ class PaymentCreate(BaseModel):
     payment_date: Optional[datetime] = None
     notes: Optional[str] = None
 
+    @field_validator("amount")
+    @classmethod
+    def amount_must_be_positive(cls, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise ValueError("Amount must be greater than 0")
+        return value
+
+    @model_validator(mode="after")
+    def must_reference_billable_record(self):
+        if not self.service_request_id and not self.vehicle_id:
+            raise ValueError("Payment must reference a vehicle or service request")
+        return self
+
 
 class PaymentOut(BaseModel):
     id: int
@@ -381,6 +394,13 @@ class PaymentOut(BaseModel):
 class SubscriptionCreate(BaseModel):
     amount: Optional[Decimal] = Decimal("50.00")
     currency: Optional[str] = "USD"
+
+    @field_validator("amount")
+    @classmethod
+    def amount_must_be_positive(cls, value: Optional[Decimal]) -> Optional[Decimal]:
+        if value is not None and value <= 0:
+            raise ValueError("Amount must be greater than 0")
+        return value
 
 
 class SubscriptionOut(BaseModel):
@@ -414,6 +434,33 @@ class BankTransferCreate(BaseModel):
     currency: Optional[str] = "USD"
     reference_number: Optional[str] = None
     transfer_note: Optional[str] = None
+
+    @field_validator("payment_type")
+    @classmethod
+    def payment_type_must_be_known(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"subscription", "service_request"}:
+            raise ValueError("Payment type must be subscription or service_request")
+        return normalized
+
+    @field_validator("amount")
+    @classmethod
+    def amount_must_be_positive(cls, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise ValueError("Amount must be greater than 0")
+        return value
+
+    @model_validator(mode="after")
+    def must_match_payment_type_to_record(self):
+        if self.payment_type == "subscription" and self.service_request_id:
+            raise ValueError("Subscription transfers cannot reference a service request")
+        if self.payment_type == "subscription" and not (self.subscription_id or self.vehicle_id):
+            raise ValueError("Subscription transfers must reference a subscription or vehicle")
+        if self.payment_type == "service_request" and (self.subscription_id or self.vehicle_id):
+            raise ValueError("Service request transfers cannot reference a subscription or vehicle")
+        if self.payment_type == "service_request" and not self.service_request_id:
+            raise ValueError("Service request transfers must reference a service request")
+        return self
 
 
 class BankTransferUpdate(BaseModel):

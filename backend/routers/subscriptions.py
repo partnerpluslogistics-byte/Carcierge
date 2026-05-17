@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,7 +32,7 @@ def create_subscription(
 
     sub = models.Subscription(
         user_id=current_user.id,
-        amount=payload.amount,
+        amount=payload.amount if payload.amount is not None else Decimal("50.00"),
         currency=payload.currency or "USD",
         status="pending_payment",
     )
