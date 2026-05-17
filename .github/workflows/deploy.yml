@@ -124,6 +124,34 @@ jobs:
           "${ssh_cmd[@]}" "
             set -euo pipefail
             cd ${remote_app_dir}
+
+            if [ \"\$(id -u)\" -eq 0 ]; then
+              sudo_cmd=''
+            else
+              sudo_cmd='sudo'
+            fi
+
+            if ! command -v docker >/dev/null 2>&1; then
+              if command -v apt-get >/dev/null 2>&1; then
+                \$sudo_cmd apt-get update
+                \$sudo_cmd apt-get install -y ca-certificates curl
+                curl -fsSL https://get.docker.com | \$sudo_cmd sh
+              else
+                echo 'Docker is not installed and this workflow only auto-installs it on apt-based servers.' >&2
+                exit 1
+              fi
+            fi
+
+            if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1; then
+              if command -v apt-get >/dev/null 2>&1; then
+                \$sudo_cmd apt-get update
+                \$sudo_cmd apt-get install -y docker-compose-plugin
+              else
+                echo 'Docker Compose is not installed and this workflow only auto-installs it on apt-based servers.' >&2
+                exit 1
+              fi
+            fi
+
             find . -mindepth 1 -maxdepth 1 ! -name '.env' ! -name 'release.tar.gz' -exec rm -rf {} +
             tar -xzf release.tar.gz
             rm release.tar.gz
