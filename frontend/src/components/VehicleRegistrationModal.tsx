@@ -27,6 +27,68 @@ const COUNTRIES = [
   "India", "Pakistan", "Philippines", "Other",
 ];
 
+const CountrySelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
+  <Select value={value} onValueChange={onChange}>
+    <SelectTrigger>
+      <SelectValue placeholder="Select country (optional)" />
+    </SelectTrigger>
+    <SelectContent>
+      {COUNTRIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+    </SelectContent>
+  </Select>
+);
+
+interface InsuranceFormProps {
+  index: number;
+  ins: InsuranceEntry;
+  updateInsurance: (index: number, field: keyof InsuranceEntry, value: string) => void;
+}
+
+const InsuranceForm = ({ index, ins, updateInsurance }: InsuranceFormProps) => {
+  if (!ins) return null;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label>Policy Number *</Label>
+          <Input value={ins.policyNumber} onChange={(e) => updateInsurance(index, "policyNumber", e.target.value)} placeholder="POL-12345" />
+        </div>
+        <div>
+          <Label>Insurance Provider</Label>
+          <Input value={ins.provider} onChange={(e) => updateInsurance(index, "provider", e.target.value)} placeholder="Provider name" />
+        </div>
+        <div>
+          <Label>Coverage Type *</Label>
+          <Select value={ins.coverageType} onValueChange={(v) => updateInsurance(index, "coverageType", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Comprehensive">Comprehensive</SelectItem>
+              <SelectItem value="3rd Party">3rd Party</SelectItem>
+              <SelectItem value="Mandatory">Mandatory</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Premium Amount</Label>
+          <Input type="number" value={ins.premiumAmount} onChange={(e) => updateInsurance(index, "premiumAmount", e.target.value)} placeholder="0.00" />
+        </div>
+        <div>
+          <Label>Policy Start Date</Label>
+          <Input type="date" value={ins.policyStartDate} onChange={(e) => updateInsurance(index, "policyStartDate", e.target.value)} />
+        </div>
+        <div>
+          <Label>Policy End Date *</Label>
+          <Input type="date" value={ins.policyEndDate} onChange={(e) => updateInsurance(index, "policyEndDate", e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <Label>Country</Label>
+          <CountrySelect value={ins.country} onChange={(v) => updateInsurance(index, "country", v)} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 type PaymentMethod = "whish" | "omt" | "ziina" | "payment_link" | "bank_transfer";
 
 interface InsuranceEntry {
@@ -328,62 +390,6 @@ export default function VehicleRegistrationModal({
     }
   };
 
-  const CountrySelect = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger>
-        <SelectValue placeholder="Select country (optional)" />
-      </SelectTrigger>
-      <SelectContent>
-        {COUNTRIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  );
-
-  const InsuranceForm = ({ index }: { index: number }) => {
-    const ins = insurances[index];
-    if (!ins) return null;
-    return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label>Policy Number *</Label>
-            <Input value={ins.policyNumber} onChange={(e) => updateInsurance(index, "policyNumber", e.target.value)} placeholder="POL-12345" />
-          </div>
-          <div>
-            <Label>Insurance Provider</Label>
-            <Input value={ins.provider} onChange={(e) => updateInsurance(index, "provider", e.target.value)} placeholder="Provider name" />
-          </div>
-          <div>
-            <Label>Coverage Type *</Label>
-            <Select value={ins.coverageType} onValueChange={(v) => updateInsurance(index, "coverageType", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Comprehensive">Comprehensive</SelectItem>
-                <SelectItem value="3rd Party">3rd Party</SelectItem>
-                <SelectItem value="Mandatory">Mandatory</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Premium Amount</Label>
-            <Input type="number" value={ins.premiumAmount} onChange={(e) => updateInsurance(index, "premiumAmount", e.target.value)} placeholder="0.00" />
-          </div>
-          <div>
-            <Label>Policy Start Date</Label>
-            <Input type="date" value={ins.policyStartDate} onChange={(e) => updateInsurance(index, "policyStartDate", e.target.value)} />
-          </div>
-          <div>
-            <Label>Policy End Date *</Label>
-            <Input type="date" value={ins.policyEndDate} onChange={(e) => updateInsurance(index, "policyEndDate", e.target.value)} />
-          </div>
-          <div className="col-span-2">
-            <Label>Country</Label>
-            <CountrySelect value={ins.country} onChange={(v) => updateInsurance(index, "country", v)} />
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
@@ -693,7 +699,7 @@ export default function VehicleRegistrationModal({
               <TabsContent value="insurance" className="space-y-6">
                 <div>
                   <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide">Insurance Policy 1</h3>
-                  <InsuranceForm index={0} />
+                  <InsuranceForm index={0} ins={insurances[0]} updateInsurance={updateInsurance} />
                 </div>
                 <div className="flex items-center gap-3 pt-2 border-t">
                   <Switch id="second-insurance" checked={hasSecondInsurance} onCheckedChange={handleToggleSecondInsurance} />
@@ -702,7 +708,7 @@ export default function VehicleRegistrationModal({
                 {hasSecondInsurance && (
                   <div>
                     <h3 className="font-semibold mb-3 text-sm text-muted-foreground uppercase tracking-wide">Insurance Policy 2</h3>
-                    <InsuranceForm index={1} />
+                    <InsuranceForm index={1} ins={insurances[1]} updateInsurance={updateInsurance} />
                   </div>
                 )}
               </TabsContent>
