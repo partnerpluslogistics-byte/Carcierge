@@ -6,16 +6,20 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - carcierge_db:/app
+      - carcierge_data:/app/data
+      - carcierge_uploads:/app/uploads
     environment:
-      - DEFAULT_ADMIN_EMAIL=PartnerPluslogistics@gmail.com
-      - DEFAULT_ADMIN_PASSWORD=Admin@123
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/carcierge.db}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-prod}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-PartnerPluslogistics@gmail.com}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-Admin@123}
     restart: unless-stopped
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: ../Dockerfile.frontend
+      context: .
+      dockerfile: Dockerfile.frontend
     ports:
       - "3000:80"
     depends_on:
@@ -23,4 +27,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  carcierge_db:
+  carcierge_data:
+  carcierge_uploads:

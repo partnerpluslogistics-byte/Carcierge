@@ -1,0 +1,9 @@
+.git
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/**/*.pyc
+backend/data
+backend/uploads
+node_modules
+dist

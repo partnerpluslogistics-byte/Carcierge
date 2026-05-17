@@ -50,8 +50,8 @@ export default function Register() {
       // Register
       await authApi.register(email.trim(), name.trim(), password);
       // Auto-login
-      await authApi.login(email.trim(), password);
-      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      const { user } = await authApi.login(email.trim(), password);
+      queryClient.setQueryData(["auth", "me"], user);
       toast.success("Account created successfully! Welcome to Carcierge.");
       navigate("/dashboard");
     } catch (err: any) {

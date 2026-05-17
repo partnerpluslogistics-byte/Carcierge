@@ -1,22 +1,109 @@
 import axios from "axios";
 
+const snakeToCamel = (key: string) =>
+  key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+const camelToSnake = (key: string) =>
+  key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Object.prototype.toString.call(value) === "[object Object]";
+
+const shouldTransform = (value: unknown) => {
+  if (value == null) return false;
+  if (typeof FormData !== "undefined" && value instanceof FormData) return false;
+  if (typeof Blob !== "undefined" && value instanceof Blob) return false;
+  if (typeof File !== "undefined" && value instanceof File) return false;
+  if (value instanceof Date) return false;
+  return true;
+};
+
+const transformKeys = (value: unknown, transform: (key: string) => string): unknown => {
+  if (!shouldTransform(value)) return value;
+  if (Array.isArray(value)) return value.map((item) => transformKeys(item, transform));
+  if (!isPlainObject(value)) return value;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      transform(key),
+      transformKeys(nested, transform),
+    ])
+  );
+};
+
+const detailToMessage = (detail: unknown): string | undefined => {
+  if (typeof detail === "string") return detail;
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (isPlainObject(item)) {
+          const msg = item.msg ?? item.message ?? item.detail;
+          return typeof msg === "string" ? msg : undefined;
+        }
+        return undefined;
+      })
+      .filter(Boolean);
+
+    return messages.length ? messages.join(", ") : undefined;
+  }
+
+  if (isPlainObject(detail)) {
+    const msg = detail.msg ?? detail.message ?? detail.detail;
+    return typeof msg === "string" ? msg : undefined;
+  }
+
+  return undefined;
+};
+
+const normalizeErrorData = (data: unknown): unknown => {
+  const transformed = transformKeys(data, snakeToCamel);
+  if (!isPlainObject(transformed)) return transformed;
+
+  const detailMessage = detailToMessage(transformed.detail);
+  if (detailMessage) {
+    if (typeof transformed.message !== "string") transformed.message = detailMessage;
+    if (typeof transformed.error !== "string") transformed.error = detailMessage;
+  }
+
+  return transformed;
+};
+
+type TokenResponse = {
+  accessToken: string;
+  tokenType: string;
+  user: unknown;
+};
+
 const api = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
 });
 
-// Add auth token to every request
+// Add auth token and convert frontend camelCase payloads to backend snake_case.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("auth_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (config.data) config.data = transformKeys(config.data, camelToSnake);
+  if (config.params) config.params = transformKeys(config.params, camelToSnake);
   return config;
 });
 
-// Auto-logout on 401
+// Convert backend snake_case responses to the camelCase shape used by the app.
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    res.data = transformKeys(res.data, snakeToCamel);
+    return res;
+  },
   (err) => {
-    if (err.response?.status === 401) {
+    if (err.response?.data) {
+      err.response.data = normalizeErrorData(err.response.data);
+    }
+    const requestUrl = err.config?.url ?? "";
+    const isAuthRequest = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/register");
+    const hadToken = Boolean(localStorage.getItem("auth_token"));
+    if (err.response?.status === 401 && hadToken && !isAuthRequest) {
       localStorage.removeItem("auth_token");
       localStorage.removeItem("auth_user");
       window.location.href = "/";
@@ -33,22 +120,22 @@ export { api };
 
 export const authApi = {
   register: async (email: string, name: string, password: string) => {
-    const res = await api.post<{ access_token: string; token_type: string; user: unknown }>("/auth/register", {
+    const res = await api.post<TokenResponse>("/auth/register", {
       email,
       name,
       password,
     });
-    localStorage.setItem("auth_token", res.data.access_token);
+    localStorage.setItem("auth_token", res.data.accessToken);
     localStorage.setItem("auth_user", JSON.stringify(res.data.user));
     return res.data;
   },
 
   login: async (email: string, password: string) => {
-    const res = await api.post<{ access_token: string; token_type: string; user: unknown }>("/auth/login", {
+    const res = await api.post<TokenResponse>("/auth/login", {
       email,
       password,
     });
-    localStorage.setItem("auth_token", res.data.access_token);
+    localStorage.setItem("auth_token", res.data.accessToken);
     localStorage.setItem("auth_user", JSON.stringify(res.data.user));
     return res.data;
   },
@@ -417,8 +504,13 @@ export const subscriptionApi = {
   },
 
   getActive: async () => {
-    const res = await api.get("/subscriptions/active");
-    return res.data;
+    try {
+      const res = await api.get("/subscriptions/active");
+      return res.data;
+    } catch (err: any) {
+      if (err?.response?.status === 404) return null;
+      throw err;
+    }
   },
 
   create: async (data: Record<string, unknown>) => {

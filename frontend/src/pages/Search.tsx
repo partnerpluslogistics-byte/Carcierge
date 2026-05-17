@@ -122,18 +122,18 @@ export default function Search() {
                       <p className="font-medium">
                         {v.make} {v.model} {v.year ? `(${v.year})` : ""}
                       </p>
-                      <p className="text-sm text-muted-foreground font-mono">{v.plate_number}</p>
+                      <p className="text-sm text-muted-foreground font-mono">{v.plateNumber}</p>
                       {v.country && (
                         <p className="text-xs text-muted-foreground">{v.country}</p>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge variant="outline" className="text-xs">{v.vehicle_type}</Badge>
+                      <Badge variant="outline" className="text-xs">{v.vehicleType}</Badge>
                       <Badge
-                        variant={v.payment_status === "paid" ? "default" : "secondary"}
+                        variant={v.paymentStatus === "paid" ? "default" : "secondary"}
                         className="text-xs"
                       >
-                        {v.payment_status?.replace(/_/g, " ")}
+                        {v.paymentStatus?.replace(/_/g, " ")}
                       </Badge>
                     </div>
                   </div>
@@ -159,12 +159,12 @@ export default function Search() {
                     className="flex items-start justify-between gap-4 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <div className="space-y-1">
-                      <p className="font-medium">{o.full_name}</p>
+                      <p className="font-medium">{o.fullName}</p>
                       {o.email && (
                         <p className="text-sm text-muted-foreground">{o.email}</p>
                       )}
-                      {o.contact_number && (
-                        <p className="text-xs text-muted-foreground">{o.contact_number}</p>
+                      {o.contactNumber && (
+                        <p className="text-xs text-muted-foreground">{o.contactNumber}</p>
                       )}
                     </div>
                     {o.country && (
@@ -193,13 +193,13 @@ export default function Search() {
                     className="flex items-start justify-between gap-4 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <div className="space-y-1">
-                      <p className="font-medium font-mono">{r.registration_number}</p>
-                      {r.issuing_authority && (
-                        <p className="text-sm text-muted-foreground">{r.issuing_authority}</p>
+                      <p className="font-medium font-mono">{r.registrationNumber}</p>
+                      {r.issuingAuthority && (
+                        <p className="text-sm text-muted-foreground">{r.issuingAuthority}</p>
                       )}
-                      {r.expiry_date && (
+                      {r.expiryDate && (
                         <p className="text-xs text-muted-foreground">
-                          Expires: {new Date(r.expiry_date).toLocaleDateString()}
+                          Expires: {new Date(r.expiryDate).toLocaleDateString()}
                         </p>
                       )}
                     </div>
@@ -232,17 +232,17 @@ export default function Search() {
                     className="flex items-start justify-between gap-4 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
                   >
                     <div className="space-y-1">
-                      <p className="font-medium font-mono">{p.policy_number}</p>
-                      {p.insurance_provider && (
-                        <p className="text-sm text-muted-foreground">{p.insurance_provider}</p>
+                      <p className="font-medium font-mono">{p.policyNumber}</p>
+                      {p.insuranceProvider && (
+                        <p className="text-sm text-muted-foreground">{p.insuranceProvider}</p>
                       )}
-                      {p.policy_end_date && (
+                      {p.policyEndDate && (
                         <p className="text-xs text-muted-foreground">
-                          Expires: {new Date(p.policy_end_date).toLocaleDateString()}
+                          Expires: {new Date(p.policyEndDate).toLocaleDateString()}
                         </p>
                       )}
-                      {p.coverage_type && (
-                        <p className="text-xs text-muted-foreground">{p.coverage_type}</p>
+                      {p.coverageType && (
+                        <p className="text-xs text-muted-foreground">{p.coverageType}</p>
                       )}
                     </div>
                     <Badge

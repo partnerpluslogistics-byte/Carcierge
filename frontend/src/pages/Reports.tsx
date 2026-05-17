@@ -41,13 +41,13 @@ export default function Reports() {
     try {
       const headers = ["Plate", "Make", "Model", "Year", "Type", "Country", "Payment Status"];
       const rows = vehicles.map((v) => [
-        v.plate_number,
+        v.plateNumber,
         v.make,
         v.model,
         v.year,
-        v.vehicle_type,
+        v.vehicleType,
         v.country,
-        v.payment_status?.replace(/_/g, " "),
+        v.paymentStatus?.replace(/_/g, " "),
       ]);
       downloadCSV("vehicle-status-report", headers, rows);
       toast.success("Vehicle Status Report exported.");
@@ -71,17 +71,17 @@ export default function Reports() {
 
       const rows = vehicles.map((v: any) => {
         const reg = v.registrations?.[0];
-        const ins = v.insurance_policies?.[0];
+        const ins = v.insurancePolicies?.[0];
         const insp = v.inspections?.[0];
 
         return [
-          v.plate_number,
+          v.plateNumber,
           v.make,
           v.model,
-          reg?.expiry_date ? new Date(reg.expiry_date).toLocaleDateString() : "N/A",
-          ins?.policy_end_date ? new Date(ins.policy_end_date).toLocaleDateString() : "N/A",
-          insp?.expiry_date ? new Date(insp.expiry_date).toLocaleDateString() : "N/A",
-          v.payment_status?.replace(/_/g, " "),
+          reg?.expiryDate ? new Date(reg.expiryDate).toLocaleDateString() : "N/A",
+          ins?.policyEndDate ? new Date(ins.policyEndDate).toLocaleDateString() : "N/A",
+          insp?.expiryDate ? new Date(insp.expiryDate).toLocaleDateString() : "N/A",
+          v.paymentStatus?.replace(/_/g, " "),
         ];
       });
 
@@ -97,10 +97,10 @@ export default function Reports() {
     try {
       const headers = ["Vehicle Plate", "Request Type", "Status", "Created Date", "Notes"];
       const rows = serviceRequests.map((sr: any) => [
-        sr.vehicle_id ?? "N/A",
-        sr.request_type,
+        sr.vehicleId ?? "N/A",
+        sr.requestType,
         sr.status,
-        new Date(sr.created_at).toLocaleDateString(),
+        new Date(sr.createdAt).toLocaleDateString(),
         sr.notes ?? "",
       ]);
       downloadCSV("service-requests-report", headers, rows);

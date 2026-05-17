@@ -206,7 +206,7 @@ export default function AdminVehicles() {
         insp?.expiryDate ? new Date(insp.expiryDate).toLocaleDateString() : "",
       ];
     });
-    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csvContent = [headers, ...rows].map(row => row.map((cell: unknown) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

@@ -34,6 +34,24 @@ function BarRow({ label, value, max, color }: { label: string; value: number; ma
   );
 }
 
+const emptyStats = {
+  users: { total: 0, active: 0, newThisMonth: 0, archived: 0 },
+  vehicles: { total: 0, byType: {}, byCountry: [] },
+  registrations: { total: 0, active: 0, expiringSoon: 0, expired: 0 },
+  insurance: { total: 0, active: 0, expiringSoon: 0, expired: 0 },
+  serviceRequests: { total: 0, byType: [], byStatus: [] },
+  payments: { totalAmount: 0, pendingCount: 0, approvedCount: 0 },
+};
+
+const countArrayToEntries = (
+  rows: Array<Record<string, unknown>>,
+  labelKey: string
+): [string, number][] =>
+  rows.map((row) => [
+    String(row[labelKey] ?? "Unknown"),
+    Number(row.count ?? 0),
+  ]);
+
 export default function AdminAnalytics() {
   const { user } = useAuth();
   const analyticsQuery = useQuery({
@@ -64,14 +82,29 @@ export default function AdminAnalytics() {
 
   if (!data) return null;
 
-  const vehicleTypeEntries = Object.entries(data.vehicles.byType).sort((a: any, b: any) => b[1] - a[1]);
-  const vehicleCountryEntries = Object.entries(data.vehicles.byCountry).sort((a: any, b: any) => b[1] - a[1]).slice(0, 6);
-  const requestTypeEntries = Object.entries(data.serviceRequests.byType).sort((a: any, b: any) => b[1] - a[1]);
-  const requestStatusEntries = Object.entries(data.serviceRequests.byStatus).sort((a: any, b: any) => b[1] - a[1]);
-  const maxVehicleType = Math.max(...vehicleTypeEntries.map((e: any) => e[1] as number), 1);
-  const maxCountry = Math.max(...vehicleCountryEntries.map((e: any) => e[1] as number), 1);
-  const maxReqType = Math.max(...requestTypeEntries.map((e: any) => e[1] as number), 1);
-  const maxReqStatus = Math.max(...requestStatusEntries.map((e: any) => e[1] as number), 1);
+  const users = data.userStats ?? data.users ?? emptyStats.users;
+  const vehicles = data.vehicleStats ?? data.vehicles ?? emptyStats.vehicles;
+  const registrations = data.registrationStats ?? data.registrations ?? emptyStats.registrations;
+  const insurance = data.insuranceStats ?? data.insurance ?? emptyStats.insurance;
+  const serviceRequests = data.serviceRequestStats ?? data.serviceRequests ?? emptyStats.serviceRequests;
+  const payments = data.paymentStats ?? data.payments ?? emptyStats.payments;
+
+  const vehicleTypeEntries = Object.entries(vehicles.byType ?? {})
+    .map(([label, count]) => [label, Number(count)] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
+  const vehicleCountryEntries = countArrayToEntries(vehicles.byCountry ?? [], "country")
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6);
+  const requestTypeEntries = countArrayToEntries(serviceRequests.byType ?? [], "type")
+    .sort((a, b) => b[1] - a[1]);
+  const requestStatusEntries = countArrayToEntries(serviceRequests.byStatus ?? [], "status")
+    .sort((a, b) => b[1] - a[1]);
+  const maxVehicleType = Math.max(...vehicleTypeEntries.map((entry) => entry[1]), 1);
+  const maxCountry = Math.max(...vehicleCountryEntries.map((entry) => entry[1]), 1);
+  const maxReqType = Math.max(...requestTypeEntries.map((entry) => entry[1]), 1);
+  const maxReqStatus = Math.max(...requestStatusEntries.map((entry) => entry[1]), 1);
+  const totalRevenue = Number(payments.totalRevenue ?? payments.totalAmount ?? 0);
+  const totalPayments = Number(payments.totalCount ?? payments.approvedCount ?? 0) + Number(payments.pendingCount ?? 0);
 
   const typeColors = ["bg-blue-500", "bg-green-500", "bg-yellow-500", "bg-purple-500", "bg-pink-500", "bg-orange-500"];
 
@@ -87,12 +120,12 @@ export default function AdminAnalytics() {
 
       {/* Top-level KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard title="Total Users" value={data.users.total} sub={`${data.users.active} active`} icon={Users} color="text-blue-400" />
-        <StatCard title="New (30d)" value={data.users.newThisMonth} sub="new registrations" icon={Users} color="text-green-400" />
-        <StatCard title="Total Vehicles" value={data.vehicles.total} icon={Car} color="text-accent" />
-        <StatCard title="Registrations" value={data.registrations.total} sub={`${data.registrations.expiring} expiring`} icon={FileText} color="text-yellow-400" />
-        <StatCard title="Insurance" value={data.insurance.total} sub={`${data.insurance.expiring} expiring`} icon={Shield} color="text-green-400" />
-        <StatCard title="Revenue" value={`$${data.payments.totalRevenue.toFixed(0)}`} sub={`${data.payments.pendingCount} pending`} icon={DollarSign} color="text-emerald-400" />
+        <StatCard title="Total Users" value={users.total} sub={`${users.active} active`} icon={Users} color="text-blue-400" />
+        <StatCard title="New (30d)" value={users.newThisMonth} sub="new registrations" icon={Users} color="text-green-400" />
+        <StatCard title="Total Vehicles" value={vehicles.total} icon={Car} color="text-accent" />
+        <StatCard title="Registrations" value={registrations.total} sub={`${registrations.expiringSoon} expiring`} icon={FileText} color="text-yellow-400" />
+        <StatCard title="Insurance" value={insurance.total} sub={`${insurance.expiringSoon} expiring`} icon={Shield} color="text-green-400" />
+        <StatCard title="Revenue" value={`$${totalRevenue.toFixed(0)}`} sub={`${payments.pendingCount} pending`} icon={DollarSign} color="text-emerald-400" />
       </div>
 
       {/* Expiry health */}
@@ -106,9 +139,9 @@ export default function AdminAnalytics() {
             <CardDescription>Status of all vehicle registrations across the platform</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <BarRow label="Total" value={data.registrations.total} max={data.registrations.total} color="bg-blue-500" />
-            <BarRow label="Expiring (30d)" value={data.registrations.expiring} max={data.registrations.total} color="bg-yellow-500" />
-            <BarRow label="Expired" value={data.registrations.expired} max={data.registrations.total} color="bg-red-500" />
+            <BarRow label="Total" value={registrations.total} max={registrations.total} color="bg-blue-500" />
+            <BarRow label="Expiring (30d)" value={registrations.expiringSoon} max={registrations.total} color="bg-yellow-500" />
+            <BarRow label="Expired" value={registrations.expired} max={registrations.total} color="bg-red-500" />
           </CardContent>
         </Card>
 
@@ -121,9 +154,9 @@ export default function AdminAnalytics() {
             <CardDescription>Status of all insurance policies across the platform</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <BarRow label="Total" value={data.insurance.total} max={data.insurance.total} color="bg-blue-500" />
-            <BarRow label="Expiring (30d)" value={data.insurance.expiring} max={data.insurance.total} color="bg-yellow-500" />
-            <BarRow label="Expired" value={data.insurance.expired} max={data.insurance.total} color="bg-red-500" />
+            <BarRow label="Total" value={insurance.total} max={insurance.total} color="bg-blue-500" />
+            <BarRow label="Expiring (30d)" value={insurance.expiringSoon} max={insurance.total} color="bg-yellow-500" />
+            <BarRow label="Expired" value={insurance.expired} max={insurance.total} color="bg-red-500" />
           </CardContent>
         </Card>
       </div>
@@ -210,15 +243,15 @@ export default function AdminAnalytics() {
         <CardContent>
           <div className="grid grid-cols-3 gap-6">
             <div className="text-center">
-              <p className="text-3xl font-bold text-emerald-400">${data.payments.totalRevenue.toFixed(2)}</p>
+              <p className="text-3xl font-bold text-emerald-400">${totalRevenue.toFixed(2)}</p>
               <p className="text-sm text-muted-foreground mt-1">Total Approved Revenue</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold text-yellow-400">{data.payments.pendingCount}</p>
+              <p className="text-3xl font-bold text-yellow-400">{payments.pendingCount}</p>
               <p className="text-sm text-muted-foreground mt-1">Pending Payments</p>
             </div>
             <div className="text-center">
-              <p className="text-3xl font-bold">{data.payments.totalCount}</p>
+              <p className="text-3xl font-bold">{totalPayments}</p>
               <p className="text-sm text-muted-foreground mt-1">Total Transactions</p>
             </div>
           </div>

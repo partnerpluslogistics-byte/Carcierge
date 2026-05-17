@@ -1,0 +1,144 @@
+name: Deploy to Hetzner
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      HETZNER_PORT: ${{ secrets.HETZNER_PORT || '22' }}
+      HETZNER_USER: ${{ secrets.HETZNER_USER }}
+      HETZNER_PASSWORD: ${{ secrets.HETZNER_PASSWORD }}
+      HETZNER_APP_DIR: ${{ secrets.HETZNER_APP_DIR || '/opt/carcierge' }}
+      APP_SECRET_KEY: ${{ secrets.APP_SECRET_KEY }}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES || '10080' }}
+      DEFAULT_ADMIN_EMAIL: ${{ secrets.DEFAULT_ADMIN_EMAIL }}
+      DEFAULT_ADMIN_PASSWORD: ${{ secrets.DEFAULT_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in \
+            HETZNER_HOST \
+            HETZNER_PORT \
+            HETZNER_USER \
+            HETZNER_PASSWORD \
+            HETZNER_APP_DIR \
+            APP_SECRET_KEY \
+            DEFAULT_ADMIN_EMAIL \
+            DEFAULT_ADMIN_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required GitHub Actions secret: ${name}"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check backend syntax
+        run: python -m compileall backend
+
+      - name: Check Docker build
+        run: docker compose build
+
+      - name: Install SSH tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: Package release
+        run: git archive --format=tar.gz --output=/tmp/carcierge-release.tar.gz "$GITHUB_SHA"
+
+      - name: Deploy on Hetzner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export SSHPASS="$HETZNER_PASSWORD"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$HETZNER_PORT" -H "$HETZNER_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          remote="${HETZNER_USER}@${HETZNER_HOST}"
+          remote_app_dir="$(printf '%q' "$HETZNER_APP_DIR")"
+          ssh_cmd=(sshpass -e ssh -p "$HETZNER_PORT" -o StrictHostKeyChecking=yes "$remote")
+          scp_cmd=(sshpass -e scp -P "$HETZNER_PORT" -o StrictHostKeyChecking=yes)
+
+          cat > /tmp/carcierge.env <<EOF
+          DATABASE_URL=sqlite:///./data/carcierge.db
+          SECRET_KEY=${APP_SECRET_KEY}
+          ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+          DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL}
+          DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+          EOF
+
+          "${ssh_cmd[@]}" "mkdir -p ${remote_app_dir}"
+          "${scp_cmd[@]}" /tmp/carcierge-release.tar.gz "${remote}:${HETZNER_APP_DIR}/release.tar.gz"
+          "${scp_cmd[@]}" /tmp/carcierge.env "${remote}:${HETZNER_APP_DIR}/.env"
+
+          "${ssh_cmd[@]}" "
+            set -euo pipefail
+            cd ${remote_app_dir}
+            find . -mindepth 1 -maxdepth 1 ! -name '.env' ! -name 'release.tar.gz' -exec rm -rf {} +
+            tar -xzf release.tar.gz
+            rm release.tar.gz
+            chmod 600 .env
+
+            if docker compose version >/dev/null 2>&1; then
+              docker compose up --build -d
+            elif command -v docker-compose >/dev/null 2>&1; then
+              docker-compose up --build -d
+            else
+              echo 'Docker Compose is not installed on the server.' >&2
+              exit 1
+            fi
+
+            docker image prune -f
+          "
+
+          rm -f /tmp/carcierge.env /tmp/carcierge-release.tar.gz

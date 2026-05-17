@@ -32,9 +32,8 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
-      await authApi.login(email.trim(), password);
-      // Invalidate the auth query so useAuth picks up the new session
-      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      const { user } = await authApi.login(email.trim(), password);
+      queryClient.setQueryData(["auth", "me"], user);
       navigate("/dashboard");
     } catch (err: any) {
       const message =

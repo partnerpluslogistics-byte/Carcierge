@@ -4,10 +4,12 @@ import { useCallback } from "react";
 
 export function useAuth(_options?: { redirectOnUnauthenticated?: boolean }) {
   const queryClient = useQueryClient();
+  const hasToken = Boolean(localStorage.getItem("auth_token"));
 
   const meQuery = useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => authApi.me(),
+    enabled: hasToken,
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -18,8 +20,8 @@ export function useAuth(_options?: { redirectOnUnauthenticated?: boolean }) {
     window.location.href = "/";
   }, [queryClient]);
 
-  const user = meQuery.data ?? null;
-  const loading = meQuery.isLoading;
+  const user = hasToken ? meQuery.data ?? null : null;
+  const loading = hasToken && meQuery.isLoading;
   const isAuthenticated = Boolean(user);
 
   return {

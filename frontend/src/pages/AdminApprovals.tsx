@@ -23,8 +23,8 @@ import { CheckCircle, XCircle, Clock, CreditCard, Car, User, AlertCircle, Bankno
 // Derive a human-readable status from the bankTransfer flags
 function getTransferStatus(t: any): string {
   if (t.rejectedAt) return "rejected";
-  if (t.approvedByAdmin === 1) return "approved";
-  if (t.confirmedByUser === 1) return "payment_confirmed";
+  if (t.approvedByAdmin) return "approved";
+  if (t.confirmedByUser) return "payment_confirmed";
   return "pending_payment";
 }
 
@@ -100,8 +100,8 @@ export default function AdminApprovals() {
   }
 
   // Split by confirmedByUser flag
-  const pendingConfirmed = (allPendingTransfers as any[]).filter((t) => t.confirmedByUser === 1);
-  const pendingUnconfirmed = (allPendingTransfers as any[]).filter((t) => t.confirmedByUser === 0);
+  const pendingConfirmed = (allPendingTransfers as any[]).filter((t) => t.confirmedByUser);
+  const pendingUnconfirmed = (allPendingTransfers as any[]).filter((t) => !t.confirmedByUser);
 
   return (
     <div className="p-6 space-y-6">

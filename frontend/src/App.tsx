@@ -23,19 +23,42 @@ import Reports from "@/pages/Reports";
 import NotFound from "@/pages/NotFound";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
+
+function FullPageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function Redirect({ to }: { to: string }) {
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    navigate(to);
+  }, [navigate, to]);
+
+  return <FullPageLoader />;
+}
 
 function Router() {
   const { isAuthenticated, loading } = useAuth({ redirectOnUnauthenticated: false });
+  const [location] = useLocation();
+  const isAuthRoute = location === "/login" || location === "/register";
+  const isPublicRoute = location === "/" || isAuthRoute;
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
+    return <FullPageLoader />;
   }
 
   if (isAuthenticated) {
+    if (isAuthRoute) {
+      return <Redirect to="/dashboard" />;
+    }
+
     return (
       <DashboardLayout>
         <Switch>
@@ -55,6 +78,10 @@ function Router() {
         </Switch>
       </DashboardLayout>
     );
+  }
+
+  if (!isPublicRoute) {
+    return <Redirect to="/login" />;
   }
 
   return (
