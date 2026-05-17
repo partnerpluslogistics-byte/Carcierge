@@ -47,10 +47,11 @@ export default function Register() {
 
     setIsSubmitting(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       // Register
-      await authApi.register(email.trim(), name.trim(), password);
+      await authApi.register(normalizedEmail, name.trim(), password);
       // Auto-login
-      const { user } = await authApi.login(email.trim(), password);
+      const { user } = await authApi.login(normalizedEmail, password);
       queryClient.setQueryData(["auth", "me"], user);
       toast.success("Account created successfully! Welcome to Carcierge.");
       navigate("/dashboard");

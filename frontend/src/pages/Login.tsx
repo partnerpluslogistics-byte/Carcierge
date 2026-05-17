@@ -32,7 +32,7 @@ export default function Login() {
 
     setIsSubmitting(true);
     try {
-      const { user } = await authApi.login(email.trim(), password);
+      const { user } = await authApi.login(email.trim().toLowerCase(), password);
       queryClient.setQueryData(["auth", "me"], user);
       navigate("/dashboard");
     } catch (err: any) {

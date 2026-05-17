@@ -15,9 +15,14 @@ from auth import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 @router.post("/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.email == payload.email).first()
+    email = normalize_email(payload.email)
+    existing = db.query(models.User).filter(models.User.email == email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -25,7 +30,7 @@ def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
         )
 
     user = models.User(
-        email=payload.email,
+        email=email,
         name=payload.name,
         phone_number=payload.phone_number,
         password_hash=hash_password(payload.password),
@@ -45,7 +50,8 @@ def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=schemas.TokenResponse)
 def login(payload: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    email = normalize_email(payload.email)
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

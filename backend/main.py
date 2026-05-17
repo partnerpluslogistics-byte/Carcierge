@@ -41,6 +41,10 @@ DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "PartnerPluslogistics@gma
 DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "Admin@123")
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def create_tables():
     models.Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified.")
@@ -49,17 +53,22 @@ def create_tables():
 def seed_admin():
     db = SessionLocal()
     try:
+        admin_email = normalize_email(DEFAULT_ADMIN_EMAIL)
         existing_admin = db.query(models.User).filter(models.User.role == "admin").first()
         if not existing_admin:
             admin = models.User(
-                email=DEFAULT_ADMIN_EMAIL,
+                email=admin_email,
                 name="Admin",
                 password_hash=hash_password(DEFAULT_ADMIN_PASSWORD),
                 role="admin",
             )
             db.add(admin)
             db.commit()
-            logger.info(f"Default admin user created: {DEFAULT_ADMIN_EMAIL}")
+            logger.info(f"Default admin user created: {admin_email}")
+        elif existing_admin.email != normalize_email(existing_admin.email):
+            existing_admin.email = normalize_email(existing_admin.email)
+            db.commit()
+            logger.info(f"Admin email normalized: {existing_admin.email}")
         else:
             logger.info(f"Admin user already exists: {existing_admin.email}")
     except Exception as e:
