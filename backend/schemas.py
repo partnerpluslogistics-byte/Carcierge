@@ -248,6 +248,7 @@ class VehicleCreate(BaseModel):
     mileage: Optional[int] = None
     country: Optional[str] = None
     payment_status: Optional[str] = "pending_payment"
+    registration_complete: Optional[bool] = False
 
 
 class VehicleUpdate(BaseModel):
@@ -264,6 +265,7 @@ class VehicleUpdate(BaseModel):
     mileage: Optional[int] = None
     country: Optional[str] = None
     payment_status: Optional[str] = None
+    registration_complete: Optional[bool] = None
 
 
 class VehicleOut(BaseModel):
@@ -283,6 +285,7 @@ class VehicleOut(BaseModel):
     mileage: Optional[int] = None
     country: Optional[str] = None
     payment_status: str
+    registration_complete: bool
     created_at: datetime
     updated_at: datetime
 

@@ -77,6 +77,7 @@ class Vehicle(Base):
     mileage = Column(Integer, nullable=True)
     country = Column(String, nullable=True)
     payment_status = Column(String, default="pending_payment")  # pending_payment/pending_approval/active/rejected
+    registration_complete = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
