@@ -53,6 +53,14 @@ def normalize_email(email: str) -> str:
 def create_tables():
     models.Base.metadata.create_all(bind=engine)
     logger.info("Database tables created/verified.")
+    # Migrate: add registration_complete if it doesn't exist yet
+    from sqlalchemy import text as sa_text
+    try:
+        with engine.connect() as _conn:
+            _conn.execute(sa_text("ALTER TABLE vehicles ADD COLUMN registration_complete BOOLEAN DEFAULT 0 NOT NULL"))
+            _conn.commit()
+    except Exception:
+        pass  # column already exists
 
 
 def seed_admin():

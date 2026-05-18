@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -89,6 +89,17 @@ const InsuranceForm = ({ index, ins, updateInsurance }: InsuranceFormProps) => {
   );
 };
 
+// ─── Date helper ─────────────────────────────────────────────────────────────
+
+function shiftDate(dateStr: string, years: number, days: number): string {
+  const d = new Date(dateStr);
+  d.setFullYear(d.getFullYear() + years);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 type PaymentMethod = "whish" | "omt" | "ziina" | "payment_link" | "bank_transfer";
 
 interface InsuranceEntry {
@@ -134,6 +145,13 @@ export default function VehicleRegistrationModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("whish");
   const [payLater, setPayLater] = useState(false);
 
+  // Saved IDs for partial saves (refs for synchronous access)
+  const savedVehicleIdRef = useRef<number | null>(null);
+  const savedOwnerIdRef = useRef<number | null>(null);
+  const savedRegistrationIdRef = useRef<number | null>(null);
+  const savedInsuranceIdsRef = useRef<(number | null)[]>([null, null]);
+  const savedInspectionIdRef = useRef<number | null>(null);
+
   const [vehicleData, setVehicleData] = useState({
     make: "", model: "", year: new Date().getFullYear(),
     plateNumber: "", vin: "", engineNumber: "",
@@ -170,10 +188,19 @@ export default function VehicleRegistrationModal({
     queryFn: () => subscriptionApi.getActive(),
   });
 
+  // ─── Insurance update with date auto-fill ──────────────────────────────────
+
   const updateInsurance = (index: number, field: keyof InsuranceEntry, value: string) => {
     setInsurances(prev => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
+      const entry = { ...updated[index], [field]: value };
+      // auto-fill the other date if empty
+      if (field === "policyStartDate" && !entry.policyEndDate) {
+        entry.policyEndDate = shiftDate(value, 1, -1);
+      } else if (field === "policyEndDate" && !entry.policyStartDate) {
+        entry.policyStartDate = shiftDate(value, -1, 1);
+      }
+      updated[index] = entry;
       return updated;
     });
   };
@@ -201,119 +228,220 @@ export default function VehicleRegistrationModal({
     setTransferRef("");
     setPayLater(false);
     setPaymentMethod("whish");
+    // Reset saved ID refs
+    savedVehicleIdRef.current = null;
+    savedOwnerIdRef.current = null;
+    savedRegistrationIdRef.current = null;
+    savedInsuranceIdsRef.current = [null, null];
+    savedInspectionIdRef.current = null;
+  };
+
+  // ─── Partial save helper ───────────────────────────────────────────────────
+
+  const saveCurrentSection = async (tab: string): Promise<void> => {
+    try {
+      if (tab === "vehicle" && vehicleData.plateNumber) {
+        if (!savedVehicleIdRef.current) {
+          const result: any = await vehicleApi.create({
+            make: vehicleData.make || undefined,
+            model: vehicleData.model || undefined,
+            year: vehicleData.year,
+            plateNumber: vehicleData.plateNumber,
+            vin: vehicleData.vin || undefined,
+            engineNumber: vehicleData.engineNumber || undefined,
+            engineType: vehicleData.engineType,
+            vehicleType: vehicleData.vehicleType,
+            country: vehicleData.country || undefined,
+            registrationComplete: false,
+          });
+          const id = result?.id ?? result?.insertId;
+          if (id) savedVehicleIdRef.current = id;
+        } else {
+          await vehicleApi.update(savedVehicleIdRef.current, {
+            make: vehicleData.make || undefined,
+            model: vehicleData.model || undefined,
+            year: vehicleData.year,
+            plateNumber: vehicleData.plateNumber,
+            vin: vehicleData.vin || undefined,
+            engineNumber: vehicleData.engineNumber || undefined,
+            engineType: vehicleData.engineType,
+            vehicleType: vehicleData.vehicleType,
+            country: vehicleData.country || undefined,
+          });
+        }
+      }
+
+      if (tab === "owner" && ownerData.name) {
+        const vehicleId = savedVehicleIdRef.current;
+        if (!savedOwnerIdRef.current) {
+          const result: any = await ownerApi.create({
+            fullName: ownerData.name,
+            email: ownerData.email || undefined,
+            contactNumber: ownerData.phoneNumber || undefined,
+            driverLicenseNo: ownerData.licenseNumber || undefined,
+            country: ownerData.country || undefined,
+          });
+          const id = result?.id ?? result?.insertId;
+          if (id) {
+            savedOwnerIdRef.current = id;
+            if (vehicleId) await vehicleApi.update(vehicleId, { ownerId: id });
+          }
+        } else {
+          await ownerApi.update(savedOwnerIdRef.current, {
+            fullName: ownerData.name,
+            email: ownerData.email || undefined,
+            contactNumber: ownerData.phoneNumber || undefined,
+            driverLicenseNo: ownerData.licenseNumber || undefined,
+            country: ownerData.country || undefined,
+          });
+        }
+      }
+
+      if (tab === "registration" && savedVehicleIdRef.current) {
+        if (!savedRegistrationIdRef.current) {
+          const result: any = await registrationApi.create({
+            vehicleId: savedVehicleIdRef.current,
+            registrationNumber: registrationData.registrationNumber || undefined,
+            registrationDate: registrationData.registrationDate,
+            expiryDate: registrationData.expiryDate || undefined,
+            issuingAuthority: registrationData.issuingAuthority,
+            country: registrationData.country || undefined,
+          });
+          const id = result?.id ?? result?.insertId;
+          if (id) savedRegistrationIdRef.current = id;
+        } else {
+          await registrationApi.update(savedRegistrationIdRef.current, {
+            registrationNumber: registrationData.registrationNumber || undefined,
+            registrationDate: registrationData.registrationDate,
+            expiryDate: registrationData.expiryDate || undefined,
+            issuingAuthority: registrationData.issuingAuthority,
+            country: registrationData.country || undefined,
+          });
+        }
+      }
+
+      if (tab === "insurance" && savedVehicleIdRef.current) {
+        const newIds = [...savedInsuranceIdsRef.current];
+        for (let i = 0; i < insurances.length; i++) {
+          const ins = insurances[i];
+          if (!ins.policyNumber && !ins.policyEndDate) continue;
+          if (!newIds[i]) {
+            const result: any = await insuranceApi.create({
+              vehicleId: savedVehicleIdRef.current,
+              policyNumber: ins.policyNumber || undefined,
+              insuranceProvider: ins.provider || undefined,
+              coverageType: ins.coverageType,
+              premiumAmount: ins.premiumAmount || "0",
+              policyStartDate: ins.policyStartDate,
+              policyEndDate: ins.policyEndDate || undefined,
+              country: ins.country || undefined,
+            });
+            const id = result?.id ?? result?.insertId;
+            if (id) newIds[i] = id;
+          } else {
+            await insuranceApi.update(newIds[i]!, {
+              policyNumber: ins.policyNumber || undefined,
+              insuranceProvider: ins.provider || undefined,
+              coverageType: ins.coverageType,
+              premiumAmount: ins.premiumAmount || "0",
+              policyStartDate: ins.policyStartDate,
+              policyEndDate: ins.policyEndDate || undefined,
+              country: ins.country || undefined,
+            });
+          }
+        }
+        savedInsuranceIdsRef.current = newIds;
+      }
+
+      if (tab === "inspection" && savedVehicleIdRef.current) {
+        if (!savedInspectionIdRef.current) {
+          const result: any = await inspectionApi.create({
+            vehicleId: savedVehicleIdRef.current,
+            inspectionDate: inspectionData.inspectionDate,
+            expiryDate: inspectionData.expiryDate || undefined,
+            invoiceNumber: inspectionData.invoiceNumber || undefined,
+            country: inspectionData.country || undefined,
+          });
+          const id = result?.id ?? result?.insertId;
+          if (id) savedInspectionIdRef.current = id;
+        } else {
+          await inspectionApi.update(savedInspectionIdRef.current, {
+            inspectionDate: inspectionData.inspectionDate,
+            expiryDate: inspectionData.expiryDate || undefined,
+            invoiceNumber: inspectionData.invoiceNumber || undefined,
+            country: inspectionData.country || undefined,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Auto-save error for tab", tab, err);
+      // don't block navigation on auto-save failure
+    }
+  };
+
+  // ─── Tab change with background auto-save ─────────────────────────────────
+
+  const handleTabChange = (newTab: string) => {
+    const prevTab = activeTab;
+    setActiveTab(newTab);
+    // save the section we just left in the background
+    saveCurrentSection(prevTab);
   };
 
   const handleSubmit = async () => {
     try {
       setIsSubmitting(true);
-      if (atVehicleLimit) {
-        toast.error("You have reached the maximum of 5 vehicles per account. Please contact support to add more.");
+      if (atVehicleLimit && !savedVehicleIdRef.current) {
+        toast.error("You have reached the maximum of 5 vehicles. Please contact support.");
         return;
       }
-      if (!vehicleData.make || !vehicleData.model || !vehicleData.plateNumber) {
-        toast.error("Please fill in all required vehicle details (Make, Model, Plate Number)");
+
+      // At minimum, plate number is required
+      if (!vehicleData.plateNumber) {
+        toast.error("Please enter at least a plate number to save the vehicle.");
         setActiveTab("vehicle");
         return;
       }
-      if (!ownerData.name || !ownerData.email) {
-        toast.error("Please fill in owner name and email");
-        setActiveTab("owner");
+
+      // Save all sections
+      await saveCurrentSection(activeTab); // save the current tab first
+      await saveCurrentSection("vehicle");
+      await saveCurrentSection("owner");
+      await saveCurrentSection("registration");
+      await saveCurrentSection("insurance");
+      await saveCurrentSection("inspection");
+
+      const vehicleId = savedVehicleIdRef.current;
+      if (!vehicleId) {
+        toast.error("Failed to save vehicle. Please try again.");
         return;
       }
-      if (!registrationData.registrationNumber) {
-        toast.error("Please fill in registration number");
-        setActiveTab("registration");
-        return;
-      }
+
+      // Check completeness
       const isLebanon = registrationData.country === "Lebanon" || vehicleData.country === "Lebanon";
-      if (!isLebanon && !registrationData.expiryDate) {
-        toast.error("Please fill in registration expiry date");
-        setActiveTab("registration");
-        return;
+      const isComplete =
+        vehicleData.make && vehicleData.model && vehicleData.plateNumber &&
+        ownerData.name && ownerData.email &&
+        registrationData.registrationNumber &&
+        (isLebanon || registrationData.expiryDate) &&
+        insurances[0].policyNumber && insurances[0].policyEndDate &&
+        inspectionData.expiryDate && inspectionData.invoiceNumber;
+
+      if (isComplete) {
+        await vehicleApi.update(vehicleId, { registrationComplete: true });
       }
-      const ins1 = insurances[0];
-      if (!ins1.policyNumber || !ins1.policyEndDate) {
-        toast.error("Please fill in insurance policy number and end date");
-        setActiveTab("insurance");
-        return;
-      }
-      if (hasSecondInsurance && insurances[1]) {
-        const ins2 = insurances[1];
-        if (!ins2.policyNumber || !ins2.policyEndDate) {
-          toast.error("Please fill in the second insurance policy, or disable it");
-          setActiveTab("insurance");
-          return;
-        }
-      }
-      if (!inspectionData.expiryDate || !inspectionData.invoiceNumber) {
-        toast.error("Please fill in inspection expiry date and invoice number");
-        setActiveTab("inspection");
+
+      if (!isComplete) {
+        toast.info("Vehicle saved with incomplete information. You can complete it later from the Vehicles page.");
+        queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+        onSuccess?.();
+        onOpenChange(false);
+        resetForm();
         return;
       }
 
-      // Create owner
-      const ownerResult = await ownerApi.create({
-        fullName: ownerData.name,
-        email: ownerData.email,
-        contactNumber: ownerData.phoneNumber || undefined,
-        driverLicenseNo: ownerData.licenseNumber || undefined,
-        country: ownerData.country || undefined,
-      });
-      const ownerId = (ownerResult as any)?.insertId ?? (ownerResult as any)?.[0]?.insertId ?? (ownerResult as any)?.id;
-      if (!ownerId) throw new Error("Failed to create owner — no ID returned");
-
-      // Create vehicle
-      const vehicleResult = await vehicleApi.create({
-        ownerId,
-        make: vehicleData.make,
-        model: vehicleData.model,
-        year: vehicleData.year,
-        plateNumber: vehicleData.plateNumber,
-        vin: vehicleData.vin || undefined,
-        engineNumber: vehicleData.engineNumber || undefined,
-        engineType: vehicleData.engineType,
-        vehicleType: vehicleData.vehicleType,
-        country: vehicleData.country || undefined,
-      });
-      const vehicleId = (vehicleResult as any)?.insertId ?? (vehicleResult as any)?.[0]?.insertId ?? (vehicleResult as any)?.id;
-      if (!vehicleId) throw new Error("Failed to create vehicle — no ID returned");
-
-      // Create registration
-      await registrationApi.create({
-        vehicleId,
-        registrationNumber: registrationData.registrationNumber,
-        registrationDate: registrationData.registrationDate,
-        expiryDate: registrationData.expiryDate || undefined,
-        issuingAuthority: registrationData.issuingAuthority,
-        country: registrationData.country || undefined,
-      });
-
-      // Create insurance(s)
-      for (const ins of insurances) {
-        if (!ins.policyNumber || !ins.policyEndDate) continue;
-        await insuranceApi.create({
-          vehicleId,
-          policyNumber: ins.policyNumber,
-          insuranceProvider: ins.provider,
-          coverageType: ins.coverageType,
-          premiumAmount: ins.premiumAmount || "0",
-          policyStartDate: ins.policyStartDate,
-          policyEndDate: ins.policyEndDate,
-          country: ins.country || undefined,
-        });
-      }
-
-      // Create inspection
-      await inspectionApi.create({
-        vehicleId,
-        inspectionDate: inspectionData.inspectionDate,
-        expiryDate: inspectionData.expiryDate,
-        invoiceNumber: inspectionData.invoiceNumber,
-        country: inspectionData.country || undefined,
-      });
-
+      // Complete — proceed to payment or done
       const needsSubscription = !activeSubscription;
-
       if (needsSubscription) {
         const sub = await subscriptionApi.create({});
         const subId = (sub as any)?.id;
@@ -336,7 +464,7 @@ export default function VehicleRegistrationModal({
       }
     } catch (error: any) {
       console.error("Registration error:", error);
-      toast.error(error?.response?.data?.error || error?.message || "Failed to register vehicle. Please try again.");
+      toast.error(error?.response?.data?.error || error?.message || "Failed to save vehicle. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -576,7 +704,7 @@ export default function VehicleRegistrationModal({
               </div>
             )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="vehicle">Vehicle</TabsTrigger>
                 <TabsTrigger value="owner">Owner</TabsTrigger>
@@ -664,7 +792,18 @@ export default function VehicleRegistrationModal({
                     <Input value={registrationData.registrationNumber} onChange={(e) => setRegistrationData({ ...registrationData, registrationNumber: e.target.value })} placeholder="REG-12345" />
                   </div>
                   <div><Label>Registration Date</Label>
-                    <Input type="date" value={registrationData.registrationDate} onChange={(e) => setRegistrationData({ ...registrationData, registrationDate: e.target.value })} />
+                    <Input
+                      type="date"
+                      value={registrationData.registrationDate}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setRegistrationData(prev => ({
+                          ...prev,
+                          registrationDate: value,
+                          expiryDate: prev.expiryDate === "" && value ? shiftDate(value, 1, -1) : prev.expiryDate,
+                        }));
+                      }}
+                    />
                   </div>
                   <div>
                     <Label>Issuing Authority</Label>
@@ -685,7 +824,18 @@ export default function VehicleRegistrationModal({
                         No Expiry (Lebanon default)
                       </div>
                     ) : (
-                      <Input type="date" value={registrationData.expiryDate} onChange={(e) => setRegistrationData({ ...registrationData, expiryDate: e.target.value })} />
+                      <Input
+                        type="date"
+                        value={registrationData.expiryDate}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setRegistrationData(prev => ({
+                            ...prev,
+                            expiryDate: value,
+                            registrationDate: prev.registrationDate === "" && value ? shiftDate(value, -1, 1) : prev.registrationDate,
+                          }));
+                        }}
+                      />
                     )}
                   </div>
                   <div className="col-span-2">
@@ -717,10 +867,32 @@ export default function VehicleRegistrationModal({
               <TabsContent value="inspection" className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label>Inspection Date</Label>
-                    <Input type="date" value={inspectionData.inspectionDate} onChange={(e) => setInspectionData({ ...inspectionData, inspectionDate: e.target.value })} />
+                    <Input
+                      type="date"
+                      value={inspectionData.inspectionDate}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setInspectionData(prev => ({
+                          ...prev,
+                          inspectionDate: value,
+                          expiryDate: prev.expiryDate === "" && value ? shiftDate(value, 1, -1) : prev.expiryDate,
+                        }));
+                      }}
+                    />
                   </div>
                   <div><Label>Inspection Expiry Date *</Label>
-                    <Input type="date" value={inspectionData.expiryDate} onChange={(e) => setInspectionData({ ...inspectionData, expiryDate: e.target.value })} />
+                    <Input
+                      type="date"
+                      value={inspectionData.expiryDate}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setInspectionData(prev => ({
+                          ...prev,
+                          expiryDate: value,
+                          inspectionDate: prev.inspectionDate === "" && value ? shiftDate(value, -1, 1) : prev.inspectionDate,
+                        }));
+                      }}
+                    />
                   </div>
                   <div><Label>Invoice Number *</Label>
                     <Input value={inspectionData.invoiceNumber} onChange={(e) => setInspectionData({ ...inspectionData, invoiceNumber: e.target.value })} placeholder="INV-12345" />
@@ -743,14 +915,14 @@ export default function VehicleRegistrationModal({
                     onClick={() => {
                       const tabs = ["vehicle", "owner", "registration", "insurance", "inspection"];
                       const idx = tabs.indexOf(activeTab);
-                      if (idx < tabs.length - 1) setActiveTab(tabs[idx + 1]);
+                      if (idx < tabs.length - 1) handleTabChange(tabs[idx + 1]);
                     }}
                   >
                     Next
                   </Button>
                 )}
                 <Button onClick={handleSubmit} disabled={isSubmitting}>
-                  {isSubmitting ? "Registering..." : "Register Vehicle"}
+                  {isSubmitting ? "Saving..." : "Register Vehicle"}
                 </Button>
               </div>
             </div>
