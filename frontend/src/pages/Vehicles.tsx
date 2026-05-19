@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { vehicleApi, documentApi } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, Trash2, AlertCircle, CheckCircle, Clock, Search, Upload, FileText, ExternalLink, X, CreditCard, Lock, Plus, Pencil } from "lucide-react";
+import { Loader2, Trash2, AlertCircle, CheckCircle, Clock, Search, Upload, FileText, ExternalLink, X, CreditCard, Lock, Plus, Pencil, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,17 @@ import { Link } from "wouter";
 import VehicleRegistrationModal from "@/components/VehicleRegistrationModal";
 
 const MAX_VEHICLES = 5;
+const VEHICLE_PAYMENTS_KEY = "carcierge_vehicle_payments";
+
+interface VehiclePayment {
+  id: string;
+  vehicleId: number;
+  date: string;
+  amount: number;
+  paymentType: "cash" | "card" | "transfer";
+  notes: string;
+  createdAt: string;
+}
 
 export default function Vehicles() {
   const queryClient = useQueryClient();
@@ -29,11 +40,22 @@ export default function Vehicles() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editVehicle, setEditVehicle] = useState<any | null>(null);
+  const [plateError, setPlateError] = useState("");
   const [editForm, setEditForm] = useState<{
     make: string; model: string; year: number; plateNumber: string;
     vin: string; engineNumber: string; engineType: string; vehicleType: string;
     color: string; mileage: string; country: string;
   } | null>(null);
+
+  // Vehicle payments (localStorage)
+  const [vehiclePayments, setVehiclePayments] = useState<Record<string, VehiclePayment[]>>({});
+  const [addPaymentVehicleId, setAddPaymentVehicleId] = useState<number | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    date: new Date().toISOString().split("T")[0],
+    amount: "",
+    paymentType: "cash",
+    notes: "",
+  });
 
   const vehiclesQuery = useQuery({
     queryKey: ["vehicles", "list"],
@@ -45,6 +67,44 @@ export default function Vehicles() {
     queryFn: () => documentApi.getByVehicleId(uploadVehicleId!),
     enabled: uploadVehicleId !== null,
   });
+
+  // Load payments and seed demo data once vehicles are available
+  useEffect(() => {
+    const vehicleList: any[] = Array.isArray(vehiclesQuery.data) ? vehiclesQuery.data : [];
+    if (vehicleList.length === 0) return;
+
+    let stored: Record<string, VehiclePayment[]> = {};
+    try {
+      const raw = localStorage.getItem(VEHICLE_PAYMENTS_KEY);
+      if (raw) stored = JSON.parse(raw);
+    } catch { /* ignore */ }
+
+    const firstId = String(vehicleList[0].id);
+    if (!stored[firstId] || stored[firstId].length === 0) {
+      stored[firstId] = [
+        {
+          id: "demo-pay-1",
+          vehicleId: vehicleList[0].id,
+          date: "2026-03-15",
+          amount: 50,
+          paymentType: "cash",
+          notes: "Annual registration fee",
+          createdAt: "2026-03-15T10:00:00.000Z",
+        },
+        {
+          id: "demo-pay-2",
+          vehicleId: vehicleList[0].id,
+          date: "2026-04-20",
+          amount: 120,
+          paymentType: "card",
+          notes: "Insurance premium payment",
+          createdAt: "2026-04-20T14:30:00.000Z",
+        },
+      ];
+      localStorage.setItem(VEHICLE_PAYMENTS_KEY, JSON.stringify(stored));
+    }
+    setVehiclePayments({ ...stored });
+  }, [vehiclesQuery.data]);
 
   const deleteVehicleMutation = useMutation({
     mutationFn: (id: number) => vehicleApi.delete(id),
@@ -72,6 +132,7 @@ export default function Vehicles() {
       queryClient.invalidateQueries({ queryKey: ["vehicles"] });
       setEditVehicle(null);
       setEditForm(null);
+      setPlateError("");
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || e?.message || "Failed to update vehicle"),
   });
@@ -108,6 +169,7 @@ export default function Vehicles() {
 
   const openEditDialog = (vehicle: any) => {
     setEditVehicle(vehicle);
+    setPlateError("");
     setEditForm({
       make: vehicle.make ?? "",
       model: vehicle.model ?? "",
@@ -127,6 +189,10 @@ export default function Vehicles() {
     if (!editVehicle || !editForm) return;
     if (!editForm.make || !editForm.model || !editForm.plateNumber) {
       toast.error("Make, Model, and Plate Number are required");
+      return;
+    }
+    if (plateError) {
+      toast.error("Please fix the plate number error before saving.");
       return;
     }
     updateVehicleMutation.mutate({
@@ -150,6 +216,41 @@ export default function Vehicles() {
   const handleDeleteVehicle = async (vehicleId: number) => {
     if (!window.confirm("Are you sure you want to delete this vehicle? All associated data will be removed.")) return;
     deleteVehicleMutation.mutate(vehicleId);
+  };
+
+  const handleAddPayment = () => {
+    if (!addPaymentVehicleId) return;
+    if (!paymentForm.date || !paymentForm.amount) {
+      toast.error("Date and amount are required");
+      return;
+    }
+    const amount = parseFloat(paymentForm.amount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Invalid amount");
+      return;
+    }
+    const newPayment: VehiclePayment = {
+      id: Date.now().toString(),
+      vehicleId: addPaymentVehicleId,
+      date: paymentForm.date,
+      amount,
+      paymentType: paymentForm.paymentType as "cash" | "card" | "transfer",
+      notes: paymentForm.notes,
+      createdAt: new Date().toISOString(),
+    };
+    const key = String(addPaymentVehicleId);
+    const existing = vehiclePayments[key] || [];
+    const updated = { ...vehiclePayments, [key]: [newPayment, ...existing] };
+    localStorage.setItem(VEHICLE_PAYMENTS_KEY, JSON.stringify(updated));
+    setVehiclePayments(updated);
+    setAddPaymentVehicleId(null);
+    setPaymentForm({
+      date: new Date().toISOString().split("T")[0],
+      amount: "",
+      paymentType: "cash",
+      notes: "",
+    });
+    toast.success("Payment recorded successfully");
   };
 
   const getExpiryStatus = (expiryDate: string) => {
@@ -461,6 +562,81 @@ export default function Vehicles() {
                         </AccordionItem>
                       )}
 
+                      {/* Payments */}
+                      <AccordionItem value="payments">
+                        <AccordionTrigger className="hover:no-underline">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">Payments</span>
+                            <DollarSign className="w-4 h-4 text-green-500" />
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="space-y-4">
+                          <div className="flex justify-end">
+                            <Button
+                              size="sm"
+                              className="gap-1"
+                              onClick={() => {
+                                setAddPaymentVehicleId(vehicle.id);
+                                setPaymentForm({
+                                  date: new Date().toISOString().split("T")[0],
+                                  amount: "",
+                                  paymentType: "cash",
+                                  notes: "",
+                                });
+                              }}
+                            >
+                              <Plus className="h-3 w-3" /> Add Payment
+                            </Button>
+                          </div>
+                          {(() => {
+                            const payments = [...(vehiclePayments[String(vehicle.id)] || [])].sort(
+                              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+                            );
+                            if (payments.length === 0) {
+                              return (
+                                <p className="text-sm text-muted-foreground">No payments recorded yet.</p>
+                              );
+                            }
+                            return (
+                              <div className="overflow-x-auto rounded-md border">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-muted/50">
+                                    <tr>
+                                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Amount</th>
+                                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Type</th>
+                                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Notes</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {payments.map((p) => (
+                                      <tr key={p.id} className="border-t hover:bg-muted/30 transition-colors">
+                                        <td className="px-3 py-2">{new Date(p.date).toLocaleDateString()}</td>
+                                        <td className="px-3 py-2 font-semibold text-green-600">${p.amount.toFixed(2)}</td>
+                                        <td className="px-3 py-2">
+                                          <Badge
+                                            className={
+                                              p.paymentType === "cash"
+                                                ? "bg-green-100 text-green-800 border-green-200"
+                                                : p.paymentType === "card"
+                                                  ? "bg-blue-100 text-blue-800 border-blue-200"
+                                                  : "bg-purple-100 text-purple-800 border-purple-200"
+                                            }
+                                          >
+                                            {p.paymentType.charAt(0).toUpperCase() + p.paymentType.slice(1)}
+                                          </Badge>
+                                        </td>
+                                        <td className="px-3 py-2 text-muted-foreground">{p.notes || "—"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            );
+                          })()}
+                        </AccordionContent>
+                      </AccordionItem>
+
                       <AccordionItem value="documents">
                         <AccordionTrigger
                           className="hover:no-underline"
@@ -557,7 +733,7 @@ export default function Vehicles() {
       </div>
 
       {/* Edit Vehicle Dialog */}
-      <Dialog open={editVehicle !== null} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditForm(null); } }}>
+      <Dialog open={editVehicle !== null} onOpenChange={(open) => { if (!open) { setEditVehicle(null); setEditForm(null); setPlateError(""); } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -581,7 +757,20 @@ export default function Vehicles() {
                 </div>
                 <div>
                   <Label className="text-sm mb-1 block">Plate Number <span className="text-red-500">*</span></Label>
-                  <Input value={editForm.plateNumber} onChange={e => setEditForm(f => f ? { ...f, plateNumber: e.target.value } : f)} placeholder="e.g. ABC123" />
+                  <Input
+                    value={editForm.plateNumber}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditForm(f => f ? { ...f, plateNumber: val } : f);
+                      const dup = val.trim() && vehicles.some(
+                        v => v.id !== editVehicle?.id && v.plateNumber?.toUpperCase() === val.trim().toUpperCase()
+                      );
+                      setPlateError(dup ? "This plate number is already registered to another vehicle." : "");
+                    }}
+                    placeholder="e.g. ABC123"
+                    className={plateError ? "border-red-500" : ""}
+                  />
+                  {plateError && <p className="text-xs text-red-500 mt-1">{plateError}</p>}
                 </div>
                 <div>
                   <Label className="text-sm mb-1 block">Vehicle Type</Label>
@@ -629,10 +818,71 @@ export default function Vehicles() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditVehicle(null); setEditForm(null); }}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={updateVehicleMutation.isPending}>
+            <Button variant="outline" onClick={() => { setEditVehicle(null); setEditForm(null); setPlateError(""); }}>Cancel</Button>
+            <Button onClick={handleSaveEdit} disabled={updateVehicleMutation.isPending || !!plateError}>
               {updateVehicleMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving...</> : "Save Changes"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Payment Dialog */}
+      <Dialog
+        open={addPaymentVehicleId !== null}
+        onOpenChange={(open) => { if (!open) setAddPaymentVehicleId(null); }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5" /> Add Payment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label className="text-sm mb-1 block">Payment Date <span className="text-red-500">*</span></Label>
+              <Input
+                type="date"
+                value={paymentForm.date}
+                onChange={e => setPaymentForm(f => ({ ...f, date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label className="text-sm mb-1 block">Amount ($) <span className="text-red-500">*</span></Label>
+              <Input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label className="text-sm mb-1 block">Payment Type</Label>
+              <Select
+                value={paymentForm.paymentType}
+                onValueChange={v => setPaymentForm(f => ({ ...f, paymentType: v }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="card">Card</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm mb-1 block">Notes</Label>
+              <Input
+                value={paymentForm.notes}
+                onChange={e => setPaymentForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Optional notes..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddPaymentVehicleId(null)}>Cancel</Button>
+            <Button onClick={handleAddPayment}>Save Payment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

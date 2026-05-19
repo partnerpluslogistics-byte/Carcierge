@@ -20,6 +20,7 @@ import AdminAnalytics from "@/pages/AdminAnalytics";
 import Payments from "@/pages/Payments";
 import Search from "@/pages/Search";
 import Reports from "@/pages/Reports";
+import Promotions from "@/pages/Promotions";
 import NotFound from "@/pages/NotFound";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -73,6 +74,7 @@ function Router() {
           <Route path="/payments" component={Payments} />
           <Route path="/search" component={Search} />
           <Route path="/reports" component={Reports} />
+          <Route path="/admin/promotions" component={Promotions} />
           <Route path="/" component={Dashboard} />
           <Route component={NotFound} />
         </Switch>

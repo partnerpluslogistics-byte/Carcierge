@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+const REFERRAL_CODES_KEY = "carcierge_referral_codes";
+const REFERRALS_KEY = "carcierge_referrals";
+
 export default function Register() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -17,9 +20,28 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const recordReferral = (code: string, referredEmail: string, referredName: string) => {
+    if (!code.trim()) return;
+    const codeMap: Record<string, string> = JSON.parse(
+      localStorage.getItem(REFERRAL_CODES_KEY) || "{}"
+    );
+    const referrerId = codeMap[code.trim().toUpperCase()];
+    if (!referrerId) return;
+    const refs: any[] = JSON.parse(localStorage.getItem(REFERRALS_KEY) || "[]");
+    refs.push({
+      id: Date.now().toString(),
+      referrerId,
+      referredEmail,
+      referredName,
+      referredAt: new Date().toISOString(),
+    });
+    localStorage.setItem(REFERRALS_KEY, JSON.stringify(refs));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,9 +70,11 @@ export default function Register() {
     setIsSubmitting(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      // Register
       await authApi.register(normalizedEmail, name.trim(), password);
-      // Auto-login
+      // Record referral before auto-login
+      if (referralCode.trim()) {
+        recordReferral(referralCode, normalizedEmail, name.trim());
+      }
       const { user } = await authApi.login(normalizedEmail, password);
       queryClient.setQueryData(["auth", "me"], user);
       toast.success("Account created successfully! Welcome to Carcierge.");
@@ -169,6 +193,23 @@ export default function Register() {
                     )}
                   </button>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="referralCode">
+                  Referral Code{" "}
+                  <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  id="referralCode"
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. CARC00001A"
+                  autoComplete="off"
+                  disabled={isSubmitting}
+                  className="font-mono uppercase"
+                />
               </div>
 
               <Button

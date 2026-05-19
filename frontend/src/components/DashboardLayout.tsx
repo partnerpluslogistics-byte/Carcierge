@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { LayoutDashboard, LogOut, PanelLeft, Car, Settings, User, Users, ClipboardList, CarFront, CheckSquare, TrendingUp, CreditCard, Search, FileText } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeft, Car, Settings, User, Users, ClipboardList, CarFront, CheckSquare, TrendingUp, CreditCard, Search, FileText, Tag } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -45,6 +45,7 @@ const adminMenuItems = [
   { icon: CarFront, label: "All Vehicles", path: "/admin/vehicles" },
   { icon: CheckSquare, label: "Approvals", path: "/admin/approvals" },
   { icon: TrendingUp, label: "Analytics", path: "/admin/analytics" },
+  { icon: Tag, label: "Promotions", path: "/admin/promotions" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

@@ -403,6 +403,18 @@ export default function VehicleRegistrationModal({
         return;
       }
 
+      // Check for duplicate plate number
+      const isDuplicatePlate = (vehiclesList as any[]).some(
+        (v: any) =>
+          v.plateNumber?.toUpperCase() === vehicleData.plateNumber.trim().toUpperCase() &&
+          v.id !== savedVehicleIdRef.current
+      );
+      if (isDuplicatePlate) {
+        toast.error("This plate number is already registered to another vehicle. Please use a unique plate number.");
+        setActiveTab("vehicle");
+        return;
+      }
+
       // Save all sections
       await saveCurrentSection(activeTab); // save the current tab first
       await saveCurrentSection("vehicle");
@@ -725,8 +737,34 @@ export default function VehicleRegistrationModal({
                   <div><Label htmlFor="year">Year</Label>
                     <Input id="year" type="number" value={vehicleData.year} onChange={(e) => setVehicleData({ ...vehicleData, year: parseInt(e.target.value) })} />
                   </div>
-                  <div><Label htmlFor="plateNumber">Plate Number *</Label>
-                    <Input id="plateNumber" value={vehicleData.plateNumber} onChange={(e) => setVehicleData({ ...vehicleData, plateNumber: e.target.value })} placeholder="ABC-1234" />
+                  <div>
+                    <Label htmlFor="plateNumber">Plate Number *</Label>
+                    <Input
+                      id="plateNumber"
+                      value={vehicleData.plateNumber}
+                      onChange={(e) => setVehicleData({ ...vehicleData, plateNumber: e.target.value })}
+                      placeholder="ABC-1234"
+                      className={
+                        vehicleData.plateNumber.trim() &&
+                        (vehiclesList as any[]).some(
+                          (v: any) =>
+                            v.plateNumber?.toUpperCase() === vehicleData.plateNumber.trim().toUpperCase() &&
+                            v.id !== savedVehicleIdRef.current
+                        )
+                          ? "border-red-500"
+                          : ""
+                      }
+                    />
+                    {vehicleData.plateNumber.trim() &&
+                      (vehiclesList as any[]).some(
+                        (v: any) =>
+                          v.plateNumber?.toUpperCase() === vehicleData.plateNumber.trim().toUpperCase() &&
+                          v.id !== savedVehicleIdRef.current
+                      ) && (
+                        <p className="text-xs text-red-500 mt-1">
+                          This plate number is already registered to another vehicle.
+                        </p>
+                      )}
                   </div>
                   <div><Label htmlFor="vin">Chassis Number (VIN)</Label>
                     <Input id="vin" value={vehicleData.vin} onChange={(e) => setVehicleData({ ...vehicleData, vin: e.target.value })} placeholder="VIN..." />

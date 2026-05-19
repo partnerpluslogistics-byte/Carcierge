@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { userApi } from "@/lib/api";
@@ -17,8 +17,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { User, Mail, Phone, Bell, Calendar, Shield, Trash2, FileText, Eye } from "lucide-react";
+import { User, Mail, Phone, Bell, Calendar, Shield, Trash2, FileText, Eye, Gift, Copy } from "lucide-react";
 import { useLocation } from "wouter";
+
+const REFERRAL_CODES_KEY = "carcierge_referral_codes";
+const REFERRALS_KEY = "carcierge_referrals";
+
+function generateReferralCode(userId: number | string): string {
+  return `CARC${Number(userId).toString(16).toUpperCase().padStart(6, "0")}`;
+}
 
 export default function UserSettings() {
   const { user } = useAuth();
@@ -49,6 +56,46 @@ export default function UserSettings() {
       setNotifyInsurance(profile.notifyInsurance !== 0 && profile.notifyInsurance !== false);
       setNotifyInspection(profile.notifyInspection !== 0 && profile.notifyInspection !== false);
     }
+  }, [profile]);
+
+  // Register this user's referral code and seed demo referrals on first load
+  useEffect(() => {
+    if (!profile?.id) return;
+    const code = generateReferralCode(profile.id);
+    const codeMap: Record<string, string> = JSON.parse(
+      localStorage.getItem(REFERRAL_CODES_KEY) || "{}"
+    );
+    codeMap[code] = String(profile.id);
+    localStorage.setItem(REFERRAL_CODES_KEY, JSON.stringify(codeMap));
+
+    const existingRefs: any[] = JSON.parse(localStorage.getItem(REFERRALS_KEY) || "[]");
+    const myRefs = existingRefs.filter((r: any) => String(r.referrerId) === String(profile.id));
+    if (myRefs.length === 0) {
+      const demoRefs = [
+        {
+          id: "demo-ref-1",
+          referrerId: String(profile.id),
+          referredEmail: "jane.doe@example.com",
+          referredName: "Jane Doe",
+          referredAt: "2026-04-15T10:00:00.000Z",
+        },
+        {
+          id: "demo-ref-2",
+          referrerId: String(profile.id),
+          referredEmail: "mark.smith@example.com",
+          referredName: "Mark Smith",
+          referredAt: "2026-05-01T14:30:00.000Z",
+        },
+      ];
+      const allRefs = [...existingRefs, ...demoRefs];
+      localStorage.setItem(REFERRALS_KEY, JSON.stringify(allRefs));
+    }
+  }, [profile]);
+
+  const myReferrals = useMemo(() => {
+    if (!profile?.id) return [];
+    const refs: any[] = JSON.parse(localStorage.getItem(REFERRALS_KEY) || "[]");
+    return refs.filter((r: any) => String(r.referrerId) === String(profile.id));
   }, [profile]);
 
   const updateProfileMutation = useMutation({
@@ -105,6 +152,8 @@ export default function UserSettings() {
       </div>
     );
   }
+
+  const referralCode = profile?.id ? generateReferralCode(profile.id) : "—";
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -195,6 +244,73 @@ export default function UserSettings() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Referrals */}
+      {profile?.id && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Gift className="h-4 w-4" />
+              Referrals
+            </CardTitle>
+            <CardDescription>
+              Share your referral code to invite friends. They enter it when registering.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Your Referral Code</p>
+              <div className="flex items-center gap-2">
+                <code className="font-mono text-base font-bold bg-muted px-3 py-2 rounded-md text-accent tracking-widest">
+                  {referralCode}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(referralCode);
+                    toast.success("Referral code copied to clipboard!");
+                  }}
+                >
+                  <Copy className="h-3 w-3" /> Copy
+                </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <p className="text-sm font-medium mb-3">
+                Total Referrals:{" "}
+                <span className="font-bold text-accent">{myReferrals.length}</span>
+              </p>
+              {myReferrals.length > 0 ? (
+                <div className="space-y-2">
+                  {myReferrals.map((r: any) => (
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{r.referredName}</p>
+                        <p className="text-xs text-muted-foreground">{r.referredEmail}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(r.referredAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No referrals yet. Share your code to get started!
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Notification Preferences */}
       <Card>
