@@ -16,6 +16,8 @@ import VehicleRegistrationModal from "@/components/VehicleRegistrationModal";
 
 const MAX_VEHICLES = 5;
 const VEHICLE_PAYMENTS_KEY = "carcierge_vehicle_payments";
+const VEHICLE_HOLDS_KEY = "carcierge_vehicle_holds";
+const DRAFT_VEHICLES_KEY = "carcierge_draft_vehicles";
 
 interface VehiclePayment {
   id: string;
@@ -24,6 +26,22 @@ interface VehiclePayment {
   amount: number;
   paymentType: "cash" | "card" | "transfer";
   notes: string;
+  createdAt: string;
+}
+
+interface DraftVehicle {
+  id: string;
+  make: string;
+  model: string;
+  year: number;
+  plateNumber: string;
+  vin?: string;
+  engineNumber?: string;
+  engineType?: string;
+  vehicleType?: string;
+  color?: string;
+  country?: string;
+  isDraft: true;
   createdAt: string;
 }
 
@@ -56,6 +74,16 @@ export default function Vehicles() {
     paymentType: "cash",
     notes: "",
   });
+
+  // Hold tracking (localStorage)
+  const [clearedHolds, setClearedHolds] = useState<Record<string, boolean>>({});
+
+  // Draft (incomplete) vehicles (localStorage)
+  const [draftVehicles, setDraftVehicles] = useState<DraftVehicle[]>([]);
+  const [completeVehicle, setCompleteVehicle] = useState<any | null>(null);
+
+  // Status filter
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const vehiclesQuery = useQuery({
     queryKey: ["vehicles", "list"],
@@ -105,6 +133,38 @@ export default function Vehicles() {
     }
     setVehiclePayments({ ...stored });
   }, [vehiclesQuery.data]);
+
+  // Load cleared holds
+  useEffect(() => {
+    try {
+      const holds: Record<string, boolean> = JSON.parse(localStorage.getItem(VEHICLE_HOLDS_KEY) || "{}");
+      setClearedHolds(holds);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Load / seed draft vehicles
+  useEffect(() => {
+    let drafts: DraftVehicle[] = [];
+    try {
+      const raw = localStorage.getItem(DRAFT_VEHICLES_KEY);
+      if (raw) drafts = JSON.parse(raw);
+    } catch { /* ignore */ }
+    if (drafts.length === 0) {
+      drafts = [{
+        id: "draft-demo-1",
+        make: "Honda",
+        model: "",
+        year: 2022,
+        plateNumber: "DEMO-INC-01",
+        engineType: "Petrol",
+        vehicleType: "Car",
+        isDraft: true,
+        createdAt: new Date().toISOString(),
+      }];
+      localStorage.setItem(DRAFT_VEHICLES_KEY, JSON.stringify(drafts));
+    }
+    setDraftVehicles(drafts);
+  }, []);
 
   const deleteVehicleMutation = useMutation({
     mutationFn: (id: number) => vehicleApi.delete(id),
@@ -243,6 +303,17 @@ export default function Vehicles() {
     const updated = { ...vehiclePayments, [key]: [newPayment, ...existing] };
     localStorage.setItem(VEHICLE_PAYMENTS_KEY, JSON.stringify(updated));
     setVehiclePayments(updated);
+
+    // Auto-release hold when total payments reach $50
+    const totalPaid = [newPayment, ...existing].reduce((sum, p) => sum + p.amount, 0);
+    const vehicleObj = vehicles.find(v => v.id === addPaymentVehicleId);
+    if (vehicleObj && vehicleObj.paymentStatus === "pending_payment" && totalPaid >= 50 && !clearedHolds[key]) {
+      const newHolds = { ...clearedHolds, [key]: true };
+      localStorage.setItem(VEHICLE_HOLDS_KEY, JSON.stringify(newHolds));
+      setClearedHolds(newHolds);
+      toast.success("Hold removed — payment cleared");
+    }
+
     setAddPaymentVehicleId(null);
     setPaymentForm({
       date: new Date().toISOString().split("T")[0],
@@ -268,10 +339,23 @@ export default function Vehicles() {
   const atLimit = vehicleCount >= MAX_VEHICLES;
   const documents: any[] = Array.isArray(docsData) ? docsData : [];
 
-  const filteredVehicles = vehicles.filter((v: any) => {
+  const isHoldCleared = (v: any) => !!clearedHolds[String(v.id)];
+
+  // Merge API vehicles with draft vehicles for display
+  const allDisplayVehicles: any[] = [
+    ...vehicles,
+    ...draftVehicles.map(d => ({
+      ...d,
+      id: d.id,
+      paymentStatus: "active",
+      registrationComplete: false,
+      _isDraft: true,
+    })),
+  ];
+
+  const filteredVehicles = allDisplayVehicles.filter((v: any) => {
     const term = searchTerm.toLowerCase();
-    if (!term) return true;
-    return (
+    const matchesSearch = !term || (
       v.make?.toLowerCase().includes(term) ||
       v.model?.toLowerCase().includes(term) ||
       v.plateNumber?.toLowerCase().includes(term) ||
@@ -282,6 +366,13 @@ export default function Vehicles() {
       v.registrations?.some((r: any) => r.registrationNumber?.toLowerCase().includes(term)) ||
       v.insurancePolicies?.some((i: any) => i.policyNumber?.toLowerCase().includes(term) || i.insuranceProvider?.toLowerCase().includes(term))
     );
+    if (!matchesSearch) return false;
+    if (statusFilter === "incomplete") return v.registrationComplete === false || v._isDraft;
+    if (statusFilter === "all") return true;
+    if (statusFilter === "pending_payment") return v.paymentStatus === "pending_payment";
+    if (statusFilter === "pending_approval") return v.paymentStatus === "pending_approval";
+    if (statusFilter === "active") return v.paymentStatus === "active" && v.registrationComplete !== false && !v._isDraft;
+    return true;
   });
 
   if (vehiclesQuery.isLoading) {
@@ -322,18 +413,32 @@ export default function Vehicles() {
           </div>
         )}
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by plate, chassis, owner, country, provider..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative max-w-md flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by plate, chassis, owner, country, provider..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Vehicles</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="incomplete">Incomplete</SelectItem>
+              <SelectItem value="pending_payment">Pending Payment</SelectItem>
+              <SelectItem value="pending_approval">Pending Approval</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        {searchTerm && (
+        {(searchTerm || statusFilter !== "all") && (
           <p className="text-sm text-muted-foreground">
-            Showing {filteredVehicles.length} of {vehicles.length} vehicles
+            Showing {filteredVehicles.length} of {allDisplayVehicles.length} vehicles
           </p>
         )}
 
@@ -365,24 +470,31 @@ export default function Vehicles() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <CardTitle className="text-xl">
-                          {vehicle.make} {vehicle.model} ({vehicle.year})
+                          {vehicle.make || <span className="text-muted-foreground italic">Unknown Make</span>}{" "}
+                          {vehicle.model || <span className="text-muted-foreground italic">Unknown Model</span>}{" "}
+                          ({vehicle.year})
                         </CardTitle>
-                        {vehicle.paymentStatus === "pending_payment" && (
+                        {(vehicle.registrationComplete === false || vehicle._isDraft) && (
+                          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 gap-1">
+                            <AlertCircle className="w-3 h-3" /> Incomplete
+                          </Badge>
+                        )}
+                        {!vehicle._isDraft && vehicle.paymentStatus === "pending_payment" && (
                           <Badge className="bg-amber-100 text-amber-800 border-amber-300 gap-1">
                             <Lock className="w-3 h-3" /> Payment Required
                           </Badge>
                         )}
-                        {vehicle.paymentStatus === "pending_approval" && (
+                        {!vehicle._isDraft && vehicle.paymentStatus === "pending_approval" && (
                           <Badge className="bg-blue-100 text-blue-800 border-blue-300 gap-1">
                             <Clock className="w-3 h-3" /> Pending Approval
                           </Badge>
                         )}
-                        {vehicle.paymentStatus === "active" && (
+                        {!vehicle._isDraft && vehicle.paymentStatus === "active" && vehicle.registrationComplete !== false && (
                           <Badge className="bg-green-100 text-green-800 border-green-300 gap-1">
                             <CheckCircle className="w-3 h-3" /> Active
                           </Badge>
                         )}
-                        {vehicle.paymentStatus === "rejected" && (
+                        {!vehicle._isDraft && vehicle.paymentStatus === "rejected" && (
                           <Badge className="bg-red-100 text-red-800 border-red-300 gap-1">
                             <AlertCircle className="w-3 h-3" /> Rejected
                           </Badge>
@@ -392,21 +504,42 @@ export default function Vehicles() {
                         Plate: <span className="font-mono font-semibold">{vehicle.plateNumber}</span>
                       </p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {vehicle.paymentStatus === "pending_payment" && (
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      {(vehicle.registrationComplete === false || vehicle._isDraft) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 text-yellow-700 border-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-950"
+                          onClick={() => setCompleteVehicle(vehicle)}
+                        >
+                          <CheckCircle className="w-4 h-4" /> Complete Registration
+                        </Button>
+                      )}
+                      {!vehicle._isDraft && vehicle.paymentStatus === "pending_payment" && (
                         <Link href="/payments">
                           <Button variant="outline" size="sm" className="gap-1 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950">
                             <CreditCard className="w-4 h-4" /> Complete Payment
                           </Button>
                         </Link>
                       )}
-                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(vehicle)} title="Edit Vehicle">
-                        <Pencil className="w-4 h-4 text-accent" />
-                      </Button>
+                      {!vehicle._isDraft && (
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog(vehicle)} title="Edit Vehicle">
+                          <Pencil className="w-4 h-4 text-accent" />
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteVehicle(vehicle.id)}
+                        onClick={() => {
+                          if (vehicle._isDraft) {
+                            if (!window.confirm("Delete this draft vehicle?")) return;
+                            const updated = draftVehicles.filter(d => d.id !== vehicle.id);
+                            localStorage.setItem(DRAFT_VEHICLES_KEY, JSON.stringify(updated));
+                            setDraftVehicles(updated);
+                          } else {
+                            handleDeleteVehicle(vehicle.id);
+                          }
+                        }}
                         disabled={deleteVehicleMutation.isPending}
                         title="Delete Vehicle"
                       >
@@ -416,7 +549,17 @@ export default function Vehicles() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {vehicle.paymentStatus === "pending_payment" ? (
+                  {vehicle._isDraft ? (
+                    <div className="rounded-lg border border-yellow-300 bg-yellow-50 dark:bg-yellow-950/20 p-4 text-sm text-yellow-800 dark:text-yellow-300">
+                      <p className="font-semibold mb-1">Registration incomplete</p>
+                      <p>Missing required fields. Click <strong>Complete Registration</strong> to finish registering this vehicle.</p>
+                      <div className="mt-2 text-xs text-muted-foreground space-y-0.5">
+                        {!vehicle.make && <p>• Make is missing</p>}
+                        {!vehicle.model && <p>• Model is missing</p>}
+                        {!vehicle.plateNumber && <p>• Plate number is missing</p>}
+                      </div>
+                    </div>
+                  ) : vehicle.paymentStatus === "pending_payment" && !isHoldCleared(vehicle) ? (
                     <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
                       <Lock className="w-10 h-10 text-amber-500 opacity-70" />
                       <p className="font-semibold text-amber-700 dark:text-amber-400">Vehicle details are hidden until payment is confirmed</p>
@@ -891,6 +1034,21 @@ export default function Vehicles() {
         open={registerOpen}
         onOpenChange={setRegisterOpen}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["vehicles"] })}
+      />
+
+      <VehicleRegistrationModal
+        open={completeVehicle !== null}
+        onOpenChange={(open) => { if (!open) setCompleteVehicle(null); }}
+        initialVehicle={completeVehicle ?? undefined}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+          if (completeVehicle?._isDraft) {
+            const updated = draftVehicles.filter(d => d.id !== completeVehicle.id);
+            localStorage.setItem(DRAFT_VEHICLES_KEY, JSON.stringify(updated));
+            setDraftVehicles(updated);
+          }
+          setCompleteVehicle(null);
+        }}
       />
     </>
   );

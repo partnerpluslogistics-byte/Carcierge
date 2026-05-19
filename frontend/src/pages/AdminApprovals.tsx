@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { bankTransferApi, subscriptionApi } from "@/lib/api";
+
+const VEHICLE_HOLDS_KEY = "carcierge_vehicle_holds";
+function clearVehicleHold(vehicleId: number) {
+  try {
+    const holds: Record<string, boolean> = JSON.parse(localStorage.getItem(VEHICLE_HOLDS_KEY) || "{}");
+    holds[String(vehicleId)] = true;
+    localStorage.setItem(VEHICLE_HOLDS_KEY, JSON.stringify(holds));
+  } catch { /* ignore */ }
+}
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,7 +61,7 @@ export default function AdminApprovals() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
-  const [approveDialog, setApproveDialog] = useState<{ open: boolean; transferId: number | null }>({ open: false, transferId: null });
+  const [approveDialog, setApproveDialog] = useState<{ open: boolean; transferId: number | null; vehicleId: number | null }>({ open: false, transferId: null, vehicleId: null });
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; transferId: number | null }>({ open: false, transferId: null });
   const [adminNotes, setAdminNotes] = useState("");
   const [rejectReason, setRejectReason] = useState("");
@@ -68,14 +77,19 @@ export default function AdminApprovals() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: ({ transferId, adminNotes }: { transferId: number; adminNotes?: string }) =>
+    mutationFn: ({ transferId, adminNotes }: { transferId: number; adminNotes?: string; vehicleId?: number }) =>
       bankTransferApi.approve(transferId, adminNotes),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       toast.success("Payment approved and vehicle activated!");
-      setApproveDialog({ open: false, transferId: null });
+      if (variables.vehicleId) {
+        clearVehicleHold(variables.vehicleId);
+        toast.success("Hold removed — payment cleared", { id: "hold-cleared" });
+      }
+      setApproveDialog({ open: false, transferId: null, vehicleId: null });
       setAdminNotes("");
       refetchTransfers();
       refetchSubs();
+      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
     },
     onError: (err: any) => toast.error(err?.response?.data?.detail || err.message || "Failed to approve payment"),
   });
@@ -250,7 +264,7 @@ export default function AdminApprovals() {
                     <Button
                       size="sm"
                       className="gap-1"
-                      onClick={() => setApproveDialog({ open: true, transferId: transfer.id })}
+                      onClick={() => setApproveDialog({ open: true, transferId: transfer.id, vehicleId: transfer.vehicleId ?? null })}
                     >
                       <CheckCircle className="h-4 w-4" />
                       Approve
@@ -341,7 +355,7 @@ export default function AdminApprovals() {
       </Tabs>
 
       {/* Approve Dialog */}
-      <Dialog open={approveDialog.open} onOpenChange={(o) => setApproveDialog({ open: o, transferId: null })}>
+      <Dialog open={approveDialog.open} onOpenChange={(o) => setApproveDialog({ open: o, transferId: null, vehicleId: null })}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -362,11 +376,11 @@ export default function AdminApprovals() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setApproveDialog({ open: false, transferId: null })}>Cancel</Button>
+            <Button variant="outline" onClick={() => setApproveDialog({ open: false, transferId: null, vehicleId: null })}>Cancel</Button>
             <Button
               onClick={() => {
                 if (approveDialog.transferId) {
-                  approveMutation.mutate({ transferId: approveDialog.transferId, adminNotes: adminNotes || undefined });
+                  approveMutation.mutate({ transferId: approveDialog.transferId, adminNotes: adminNotes || undefined, vehicleId: approveDialog.vehicleId ?? undefined });
                 }
               }}
               disabled={approveMutation.isPending}

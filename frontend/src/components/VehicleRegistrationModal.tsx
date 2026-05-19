@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -126,16 +126,32 @@ interface VehicleRegistrationModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialVehicle?: {
+    id?: number | string;
+    make?: string;
+    model?: string;
+    year?: number;
+    plateNumber?: string;
+    vin?: string;
+    engineNumber?: string;
+    engineType?: string;
+    vehicleType?: string;
+    color?: string;
+    country?: string;
+    _isDraft?: boolean;
+  };
 }
 
 export default function VehicleRegistrationModal({
   open,
   onOpenChange,
   onSuccess,
+  initialVehicle,
 }: VehicleRegistrationModalProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("vehicle");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [highlightMissing, setHighlightMissing] = useState(false);
 
   const [step, setStep] = useState<"form" | "payment" | "done">("form");
   const [createdVehicleId, setCreatedVehicleId] = useState<number | null>(null);
@@ -235,6 +251,30 @@ export default function VehicleRegistrationModal({
     savedInsuranceIdsRef.current = [null, null];
     savedInspectionIdRef.current = null;
   };
+
+  // Pre-populate form when completing an existing/draft vehicle
+  useEffect(() => {
+    if (open && initialVehicle) {
+      setVehicleData({
+        make: initialVehicle.make || "",
+        model: initialVehicle.model || "",
+        year: initialVehicle.year || new Date().getFullYear(),
+        plateNumber: initialVehicle.plateNumber || "",
+        vin: initialVehicle.vin || "",
+        engineNumber: initialVehicle.engineNumber || "",
+        engineType: initialVehicle.engineType || "Petrol",
+        vehicleType: initialVehicle.vehicleType || "Car",
+        country: initialVehicle.country || "",
+      });
+      if (typeof initialVehicle.id === "number") {
+        savedVehicleIdRef.current = initialVehicle.id;
+      }
+      setHighlightMissing(true);
+    }
+    if (!open) {
+      setHighlightMissing(false);
+    }
+  }, [open, initialVehicle]);
 
   // ─── Partial save helper ───────────────────────────────────────────────────
 
@@ -535,9 +575,9 @@ export default function VehicleRegistrationModal({
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Register New Vehicle</DialogTitle>
+          <DialogTitle>{initialVehicle ? "Complete Registration" : "Register New Vehicle"}</DialogTitle>
           <DialogDescription>
-            {step === "form" && "Enter vehicle, owner, insurance, registration, and inspection details"}
+            {step === "form" && (initialVehicle ? "Fill in the missing required fields to complete this vehicle's registration" : "Enter vehicle, owner, insurance, registration, and inspection details")}
             {step === "payment" && "Complete your $50 annual subscription payment to activate your vehicle"}
             {step === "done" && (payLater ? "Vehicle saved — payment pending" : "Your vehicle has been submitted successfully")}
           </DialogDescription>
@@ -727,12 +767,29 @@ export default function VehicleRegistrationModal({
 
               {/* Vehicle Tab */}
               <TabsContent value="vehicle" className="space-y-4">
+                {highlightMissing && (!vehicleData.make || !vehicleData.model || !vehicleData.plateNumber) && (
+                  <div className="rounded-md border border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20 px-3 py-2 text-xs text-yellow-800 dark:text-yellow-300">
+                    Fields highlighted in yellow are required to complete registration.
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div><Label htmlFor="make">Make *</Label>
-                    <Input id="make" value={vehicleData.make} onChange={(e) => setVehicleData({ ...vehicleData, make: e.target.value })} placeholder="Toyota, Honda, etc." />
+                    <Input
+                      id="make"
+                      value={vehicleData.make}
+                      onChange={(e) => setVehicleData({ ...vehicleData, make: e.target.value })}
+                      placeholder="Toyota, Honda, etc."
+                      className={highlightMissing && !vehicleData.make ? "border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20" : ""}
+                    />
                   </div>
                   <div><Label htmlFor="model">Model *</Label>
-                    <Input id="model" value={vehicleData.model} onChange={(e) => setVehicleData({ ...vehicleData, model: e.target.value })} placeholder="Camry, Civic, etc." />
+                    <Input
+                      id="model"
+                      value={vehicleData.model}
+                      onChange={(e) => setVehicleData({ ...vehicleData, model: e.target.value })}
+                      placeholder="Camry, Civic, etc."
+                      className={highlightMissing && !vehicleData.model ? "border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20" : ""}
+                    />
                   </div>
                   <div><Label htmlFor="year">Year</Label>
                     <Input id="year" type="number" value={vehicleData.year} onChange={(e) => setVehicleData({ ...vehicleData, year: parseInt(e.target.value) })} />
@@ -752,6 +809,8 @@ export default function VehicleRegistrationModal({
                             v.id !== savedVehicleIdRef.current
                         )
                           ? "border-red-500"
+                          : highlightMissing && !vehicleData.plateNumber.trim()
+                          ? "border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20"
                           : ""
                       }
                     />
@@ -960,7 +1019,7 @@ export default function VehicleRegistrationModal({
                   </Button>
                 )}
                 <Button onClick={handleSubmit} disabled={isSubmitting}>
-                  {isSubmitting ? "Saving..." : "Register Vehicle"}
+                  {isSubmitting ? "Saving..." : initialVehicle ? "Complete Registration" : "Register Vehicle"}
                 </Button>
               </div>
             </div>
